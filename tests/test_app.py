@@ -3,8 +3,15 @@ import tempfile
 
 import pytest
 
-from app import create_app
+from app import app as production_app, create_app
 from services.memory import ConversationMemory
+
+
+def test_production_wsgi_import_target():
+    response = production_app.test_client().get("/")
+
+    assert response.status_code == 200
+    assert response.get_json()["service"] == "tri-buddy-agent"
 
 
 @pytest.fixture()
