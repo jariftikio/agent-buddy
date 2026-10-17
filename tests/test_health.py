@@ -48,7 +48,7 @@ def test_public_health_is_ok_and_leaks_nothing(monkeypatch):
     for secret in ("sk-or-v1", "credit_limit", "free_requests_today", "expires_at", "996"):
         assert secret not in flat
     assert "chain" not in body["models"]
-    assert body["models"]["all_free"] is True
+    assert body["models"]["all_free"] is False
 
 
 def test_removed_reporting_endpoints_are_not_registered(monkeypatch):
@@ -119,7 +119,7 @@ def test_uncapped_key_is_flagged(monkeypatch):
 
 
 def test_model_probe_is_opt_in(monkeypatch):
-    """A plain health check must never spend free-model quota."""
+    """A plain health check must not trigger a potentially billable model call."""
     def exploding_complete(*a, **k):
         raise AssertionError("/health must not generate unless probe=model")
 

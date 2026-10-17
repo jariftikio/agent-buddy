@@ -35,9 +35,9 @@ def _authorized() -> bool:
 
 
 def _check_openrouter(detailed: bool) -> Dict[str, Any]:
-    """Validate the API key without spending free-model quota.
+    """Validate the API key without making a model request.
 
-    GET /key checks auth and reports quota; it does not consume a free request,
+    GET /key checks auth and reports quota without consuming a model request,
     so this stays safe to call on every health check.
     """
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()

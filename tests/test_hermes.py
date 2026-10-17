@@ -21,12 +21,13 @@ def _reply(text: str):
     return FakeResponse(200, {"choices": [{"message": {"content": text}}]})
 
 
-def test_default_chain_is_all_free(monkeypatch):
+def test_default_chain_uses_llama_with_free_fallbacks(monkeypatch):
     monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
     monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
     chain = models.get_model_chain()
     assert chain == models.DEFAULT_MODEL_CHAIN
-    assert all(models.is_free(model) for model in chain)
+    assert chain[0] == "meta-llama/llama-3.1-70b-instruct"
+    assert all(models.is_free(model) for model in chain[1:])
 
 
 def test_paid_primary_is_ignored(monkeypatch):
@@ -150,11 +151,12 @@ def test_model_outage_falls_back_to_the_orchestrator(monkeypatch):
     assert response.get_json()["message"] == "হ্যালো! আমি ট্রাই বাডি ওএস 🚀"
 
 
-def test_prompt_states_language_matching_and_free_only():
+def test_prompt_states_language_matching_and_llama_primary():
     prompt = build_prompt()
     assert "ব্যবসায়ী সুপার ইন্টেলিজেন্ট" in prompt
     assert "Bengali in, Bengali out" in prompt
-    assert "free OpenRouter models" in prompt
+    assert "Primary: meta-llama/llama-3.1-70b-instruct." in prompt
+    assert "You run on the OpenRouter models configured for this deployment." in prompt
     for model in models.DEFAULT_MODEL_CHAIN:
         assert model in prompt
 

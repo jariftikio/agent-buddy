@@ -6,12 +6,13 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Free-tier chain. Every entry must be a ":free" (or inherently free) OpenRouter model
-# that supports tool calling, so the agent never bills the account.
+# Llama 3.1 70B is the primary model. It may incur OpenRouter charges; the remaining
+# models are free-tier fallbacks.
 # thinkingmachines/inkling:free is deliberately absent: OpenRouter gates it behind
 # "agentic harnesses" and returns a permanent 403 to a plain webhook like this one,
 # so including it would only add a wasted round-trip to every fallback.
 DEFAULT_MODEL_CHAIN: List[str] = [
+    "meta-llama/llama-3.1-70b-instruct",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
     "qwen/qwen3.8-27b:free",
     "apodex/apodex-1.1-mini:free",
@@ -23,12 +24,12 @@ FALLBACK_STATUSES = {402, 403, 408, 429, 500, 502, 503, 504}
 
 
 class AllModelsUnavailable(RuntimeError):
-    """Every model in the chain failed."""
+    """Every configured model in the chain failed."""
 
     def __init__(self, failures: List[Dict[str, Any]]) -> None:
         self.failures = failures
         detail = "; ".join(f"{item['model']}: {item['error']}" for item in failures)
-        super().__init__(f"all free models unavailable ({detail})")
+        super().__init__(f"all configured models unavailable ({detail})")
 
     @property
     def rate_limited(self) -> bool:
@@ -44,9 +45,9 @@ def get_model_chain() -> List[str]:
     """Resolve the model chain from env, falling back to the free defaults.
 
     OPENROUTER_MODELS is taken as given -- it is the explicit escape hatch for
-    anyone who deliberately wants a paid model. OPENROUTER_MODEL is only honoured
-    as primary when it is free, so a paid value left over in the environment
-    cannot quietly start billing the account.
+    anyone who deliberately wants to override the configured model chain.
+    OPENROUTER_MODEL is only honoured as an additional primary when it is free;
+    paid model selection is explicit in DEFAULT_MODEL_CHAIN or OPENROUTER_MODELS.
     """
     configured = os.getenv("OPENROUTER_MODELS", "").strip()
     if configured:
@@ -59,8 +60,8 @@ def get_model_chain() -> List[str]:
         if is_free(primary):
             return [primary, *DEFAULT_MODEL_CHAIN]
         logger.warning(
-            "Ignoring paid OPENROUTER_MODEL=%s; staying on the free chain. "
-            "Set OPENROUTER_MODELS to override deliberately.",
+            "Ignoring paid OPENROUTER_MODEL=%s; paid model overrides must be set "
+            "explicitly in OPENROUTER_MODELS.",
             primary,
         )
 

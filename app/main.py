@@ -24,9 +24,10 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1").rstrip("/")
 
 RATE_LIMIT_REPLY = (
-    "সব ফ্রি মডেল এখন রেট-লিমিটে আছে। কয়েক মিনিট পরে আবার চেষ্টা করুন, "
+    "মডেলগুলো এখন quota বা rate limit-এর কারণে unavailable। কয়েক মিনিট পরে আবার চেষ্টা করুন, "
     "অথবা ছোট করে প্রশ্নটি পাঠান।\n\n"
-    "All free models are rate-limited right now. Please try again in a few minutes, "
+    "The configured models are temporarily unavailable due to quota or rate limits. "
+    "Please try again in a few minutes, "
     "or send a shorter request."
 )
 GENERIC_ERROR_REPLY = "I ran into an issue and could not process that request right now."

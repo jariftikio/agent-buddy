@@ -27,7 +27,7 @@ Public by default and safe to expose, because it reports booleans only:
 
 ```json
 {"status":"ok","openrouter":{"configured":true,"reachable":true,"key_valid":true},
- "models":{"chain_length":3,"all_free":true},"detail":"public"}
+ "models":{"chain_length":4,"all_free":false},"detail":"public"}
 ```
 
 Set `HEALTH_TOKEN` and pass it as `?token=<...>` or an `X-Health-Token` header to also get
@@ -35,9 +35,9 @@ the key label, credit limit, remaining free requests and the resolved model chai
 gated because the endpoint is reachable from the internet on Render.
 
 The key check calls OpenRouter's `GET /key`, which validates auth **without** spending
-free-model quota, so it is safe on every health check. To confirm generation end to end, add
-`&probe=model` -- that spends one free request and reports which model answered, so it is
-token-gated and never automatic.
+model quota, so it is safe on every health check. To confirm generation end to end, add
+`&probe=model` -- that makes a model request, which may incur a charge if Llama 3.1 70B
+answers. The probe is token-gated and never automatic.
 
 `status` becomes `degraded` when the key is missing or rejected, but the HTTP code stays
 **200**: the service itself is still healthy and degrades gracefully, so a non-2xx would only
@@ -51,28 +51,30 @@ curl "https://<your-host>/health?token=<HEALTH_TOKEN>&probe=model"
 
 ## Agent model (Hermes)
 
-The live system prompt lives in `app/agent/prompt.py`. The agent runs **free-tier
-OpenRouter models only** and replies in whichever language the user wrote in
-(Bengali in -> Bengali out, English in -> English out).
+The live system prompt lives in `app/agent/prompt.py`. The agent uses Llama 3.1 70B as its
+primary OpenRouter model (which may incur charges), then falls back to free models. It
+replies in whichever language the user wrote in (Bengali in -> Bengali out, English in ->
+English out).
 
-Model fallback chain, tried in order (all support tool calling):
+Model fallback chain, tried in order:
 
-1. `nvidia/nemotron-3-ultra-550b-a55b:free` - 1M context
-2. `poolside/laguna-s-2.1:free` - 262k context
-3. `openrouter/free` - 200k context
+1. `meta-llama/llama-3.1-70b-instruct` - primary; may incur charges
+2. `nvidia/nemotron-3-ultra-550b-a55b:free`
+3. `qwen/qwen3.8-27b:free`
+4. `apodex/apodex-1.1-mini:free`
 
-`app/services/models.py` walks the chain, skipping any model that returns 402/408/429/5xx
-or an empty body. If every model fails with a rate-limit status the user is told to retry
+`app/services/models.py` walks the chain, skipping any model that returns 402/403/408/429/5xx
+or an empty body. If every model fails due to quota or rate limits the user is told to retry
 shortly; any other outage falls back to the deterministic orchestrator reply.
-The system prompt reads this same chain at request time, so its model and free-tier
-instructions stay accurate when these environment variables change.
+The system prompt reads this same chain at request time, so its model and cost instructions
+stay accurate when these environment variables change.
 
 Configuration:
 
-- `OPENROUTER_MODELS` - comma-separated chain. Overrides everything; the only way to use a
-  paid model.
+- `OPENROUTER_MODELS` - comma-separated chain. Overrides the default chain; include paid
+  models only when you intend to allow their charges.
 - `OPENROUTER_MODEL` - single primary prepended to the default chain. **Ignored unless it is
-  a `:free` model**, so a stale paid value cannot quietly start billing the account.
+  a `:free` model**, so a stale paid value cannot override the configured primary.
 - `OPENROUTER_TIMEOUT` - per-attempt timeout in seconds (default 25).
 
 Known commands are matched *before* the model runs, so they actually write to the database:
