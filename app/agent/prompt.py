@@ -1,9 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-FREE_MODEL_CHAIN_TEXT = (
-    "Primary: nvidia/nemotron-3-ultra-550b-a55b:free. Fallbacks, in order: "
-    "qwen/qwen3.8-27b:free, then apodex/apodex-1.1-mini:free."
-)
+from app.services.models import get_model_chain, is_free
 
 MAX_MEMORY_ITEMS = 40
 # A feature list or positioning note is long and is exactly the fact the bot most needs
@@ -34,10 +31,8 @@ LANGUAGE
   invent Bengali translations for industry jargon.
 - Keep one language per reply. Do not translate your own answer twice.
 
-MODEL CONSTRAINT (STRICT)
-You run exclusively on free OpenRouter models. {model_chain}
-Never ask to switch to a paid model. If every free model is rate-limited, say so plainly
-and suggest waiting a few minutes or sending a shorter request.
+MODEL CONFIGURATION
+{model_configuration}
 
 WHAT YOU CAN SEE
 - Images sent to you. You can read screenshots, charts, designs and photos directly.
@@ -83,7 +78,7 @@ CORE CAPABILITIES
 4. Ask for missing data instead of inventing it.
 
 The work usually falls into: lead generation, social media and branding, marketing, PR review
-before anything goes public, and customer support drafting.
+before anything goes public, interpreting analytics, and customer support drafting.
 
 WORKING STYLE
 - Begin by confirming what data you actually received and what you can work with.
@@ -133,7 +128,26 @@ database. When a request maps to one, tell the user the exact command to send:
 - "What do you know"
 - "Draft a proposal email for <client>" (creates a draft that needs "Approve <id>")
 Never claim a task, lead or email was saved. Only those commands save anything.
-""".format(model_chain=FREE_MODEL_CHAIN_TEXT)
+"""
+
+
+def _model_configuration() -> str:
+    chain = get_model_chain()
+    chain_text = (
+        f"Primary: {chain[0]}."
+        if len(chain) == 1
+        else f"Primary: {chain[0]}. Fallbacks, in order: {', '.join(chain[1:])}."
+    )
+    if all(is_free(model) for model in chain):
+        return (
+            f"You run exclusively on free OpenRouter models. {chain_text}\n"
+            "Never ask to switch to a paid model. If every free model is rate-limited, "
+            "say so plainly and suggest waiting a few minutes or sending a shorter request."
+        )
+    return (
+        f"You run on the OpenRouter models configured for this deployment. {chain_text}\n"
+        "Do not claim the configured models are free unless their names identify them as free."
+    )
 
 NO_MEMORY_NOTE = """
 WHAT YOU KNOW ABOUT THE BUSINESS
@@ -213,7 +227,8 @@ def build_prompt(
     `reports` is passed only on the Slack path, so a Telegram user is never told
     about slash commands that do not exist there.
     """
-    prompt = BASE_PROMPT + _format_memories(memories or [])
+    prompt = BASE_PROMPT.format(model_configuration=_model_configuration())
+    prompt += _format_memories(memories or [])
     if reports is not None:
         prompt += _format_reports(reports)
     return prompt

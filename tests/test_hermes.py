@@ -157,3 +157,21 @@ def test_prompt_states_language_matching_and_free_only():
     assert "free OpenRouter models" in prompt
     for model in models.DEFAULT_MODEL_CHAIN:
         assert model in prompt
+
+
+def test_prompt_uses_the_configured_free_model_chain(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODELS", "one/a:free,two/b:free")
+    prompt = build_prompt()
+
+    assert "Primary: one/a:free. Fallbacks, in order: two/b:free." in prompt
+    assert "You run exclusively on free OpenRouter models." in prompt
+    assert "nvidia/nemotron-3-ultra-550b-a55b:free" not in prompt
+
+
+def test_prompt_does_not_claim_an_explicit_paid_chain_is_free(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODELS", "vendor/model")
+    prompt = build_prompt()
+
+    assert "Primary: vendor/model." in prompt
+    assert "You run on the OpenRouter models configured for this deployment." in prompt
+    assert "You run exclusively on free OpenRouter models." not in prompt

@@ -64,6 +64,8 @@ Model fallback chain, tried in order (all support tool calling):
 `app/services/models.py` walks the chain, skipping any model that returns 402/408/429/5xx
 or an empty body. If every model fails with a rate-limit status the user is told to retry
 shortly; any other outage falls back to the deterministic orchestrator reply.
+The system prompt reads this same chain at request time, so its model and free-tier
+instructions stay accurate when these environment variables change.
 
 Configuration:
 
