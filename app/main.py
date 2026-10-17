@@ -1,3 +1,4 @@
+import hmac
 import logging
 import os
 import threading
@@ -44,44 +45,74 @@ def _stored_facts(orchestrator) -> list:
 
 
 def telegram_webhook():
-    payload = request.get_json(silent=True) or {}
-
     webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
-    if webhook_secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != webhook_secret:
+    if not webhook_secret and not current_app.config["TESTING"]:
+        logger.error("Telegram webhook rejected | TELEGRAM_WEBHOOK_SECRET is not configured")
+        return jsonify({"status": "error", "reason": "webhook_secret_not_configured"}), 503
+    provided_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if (
+        webhook_secret
+        and (provided_secret or not current_app.config["TESTING"])
+        and not hmac.compare_digest(provided_secret, webhook_secret)
+    ):
+        logger.warning("Telegram webhook rejected | invalid secret header")
         return jsonify({"status": "ignored", "reason": "invalid_secret"}), 403
 
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        logger.warning("Telegram webhook ignored | request body is not a JSON object")
+        return jsonify({"status": "ignored", "reason": "invalid_payload"}), 200
+
     message = payload.get("message") or payload.get("edited_message") or {}
-    sender = message.get("from", {})
-    chat = message.get("chat", {})
+    if not isinstance(message, dict):
+        logger.warning("Telegram webhook ignored | message field is invalid")
+        return jsonify({"status": "ignored", "reason": "invalid_message"}), 200
+
+    sender = message.get("from")
+    if not isinstance(sender, dict):
+        sender = {}
+    chat = message.get("chat")
+    if not isinstance(chat, dict):
+        chat = {}
     chat_id = chat.get("id")
-    incoming_text = (message.get("text") or "").strip()
+    message_text = message.get("text")
+    incoming_text = message_text.strip() if isinstance(message_text, str) else ""
 
     logger.info(
-        "Incoming Telegram webhook | chat_id=%s sender_id=%s text=%r",
-        chat_id,
-        sender.get("id"),
-        incoming_text,
+        "Incoming Telegram webhook | update_id=%s chat_id_present=%s",
+        payload.get("update_id"),
+        chat_id is not None,
     )
 
     if sender.get("is_bot") is True:
         return jsonify({"status": "ignored", "reason": "loop_protection"}), 200
 
     photo_bytes = None
-    photos = message.get("photo") or []
+    photos = message.get("photo")
+    if not isinstance(photos, list):
+        photos = []
+    photos = [photo for photo in photos if isinstance(photo, dict) and photo.get("file_id")]
     if photos:
         # Telegram sends several sizes; the last is the largest.
         photo_bytes = fetch_telegram_photo(photos[-1].get("file_id", ""))
         if photo_bytes and not incoming_text:
-            incoming_text = (message.get("caption") or "").strip() or "Describe this image."
+            caption = message.get("caption")
+            incoming_text = (
+                caption.strip() if isinstance(caption, str) else ""
+            ) or "Describe this image."
 
     if not incoming_text and not photo_bytes:
         return jsonify({"status": "ignored", "reason": "missing_context"}), 200
+
+    if not TELEGRAM_BOT_TOKEN and not current_app.config["TESTING"]:
+        logger.error("Cannot reply to Telegram update | TELEGRAM_BOT_TOKEN is not configured")
+        return jsonify({"status": "error", "reason": "telegram_token_not_configured"}), 503
 
     prompt_content = incoming_text
 
     if chat_id is None and current_app.config["TESTING"]:
         result = current_app.config.get("agent_orchestrator").handle_message(prompt_content)
-        logger.info("Testing fallback reply | chat_id=%s reply=%s", chat_id, result.get("message"))
+        logger.info("Testing fallback reply")
         return jsonify(result), 200
 
     if chat_id is None:
@@ -94,7 +125,7 @@ def telegram_webhook():
     command_result = orchestrator.handle_message(prompt_content)
     if command_result.get("handled"):
         ai_text = command_result.get("message") or GENERIC_ERROR_REPLY
-        logger.info("Command handled | chat_id=%s reply=%s", chat_id, ai_text)
+        logger.info("Command handled | chat_id=%s", chat_id)
     else:
         try:
             system_prompt = build_prompt(_stored_facts(orchestrator))
@@ -120,21 +151,27 @@ def telegram_webhook():
             logger.exception("Model call failed | chat_id=%s error=%s", chat_id, error)
             ai_text = command_result.get("message") or GENERIC_ERROR_REPLY
 
-    logger.info("Orchestrator reply | chat_id=%s reply=%s", chat_id, ai_text)
+    logger.info("Prepared Telegram reply | chat_id=%s", chat_id)
 
     telegram_payload = {"chat_id": chat_id, "text": ai_text}
     send_url = f"{TELEGRAM_API_URL}/sendMessage"
 
-    logger.info("Sending reply to Telegram | chat_id=%s url=%s", chat_id, send_url)
+    logger.info("Sending reply to Telegram | chat_id=%s", chat_id)
     try:
         dispatch_response = requests.post(send_url, json=telegram_payload, timeout=10)
         dispatch_response.raise_for_status()
         logger.info("Telegram dispatch success | chat_id=%s status=%s", chat_id, dispatch_response.status_code)
-    except Exception as error:
-        logger.exception("Telegram dispatch failed | chat_id=%s error=%s", chat_id, error)
+    except requests.RequestException as error:
+        status_code = getattr(getattr(error, "response", None), "status_code", None)
+        logger.error(
+            "Telegram dispatch failed | chat_id=%s status=%s error_type=%s",
+            chat_id,
+            status_code,
+            type(error).__name__,
+        )
         if current_app.config["TESTING"]:
-            return jsonify({"ok": False, "message": str(error)}), 500
-        return jsonify({"status": "dispatch_error", "message": str(error)}), 500
+            return jsonify({"ok": False, "message": "Telegram message dispatch failed"}), 500
+        return jsonify({"status": "dispatch_error"}), 500
 
     # Lead capture runs after the reply is delivered, on its own thread, so an extra
     # model call never delays the answer or risks Telegram's webhook timeout.
@@ -163,13 +200,15 @@ def create_app(testing: bool = False) -> Flask:
     def index():
         return jsonify({"status": "ok", "service": "tri-buddy-agent"})
 
-    from app.api.webhook import webhook_bp
+    from app.api.webhook import register_telegram_webhook, webhook_bp
     from app.api.slack import slack_bp
     from app.api.tasks import tasks_bp
     app.register_blueprint(webhook_bp)
     app.register_blueprint(slack_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(health_bp)
+    if not testing and os.getenv("RENDER_EXTERNAL_URL", "").strip():
+        register_telegram_webhook()
     return app
 
 
