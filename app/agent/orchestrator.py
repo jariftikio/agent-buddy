@@ -6,8 +6,6 @@ from app.services.memory import MemoryService
 from app.tools.approvals import ApprovalService
 from app.tools.email_drafts import draft_proposal_email
 from app.tools.leads import add_lead
-from app.tools.tasks import add_task
-from app.tools.team import assign_task_to_member
 
 # "is" / "are", with or without a trailing colon. The key stays on one line; the value may
 # run over several, so a pasted list survives intact.
@@ -31,24 +29,11 @@ class AgentOrchestrator:
     def handle_message(self, message: str) -> Dict[str, Any]:
         lowered = message.lower().strip()
 
-        if lowered.startswith("add task"):
-            match = re.match(r"add task:\s*(.+)", message, flags=re.IGNORECASE)
-            title = match.group(1).strip() if match else message.replace("Add task:", "", 1).strip()
-            task = add_task(title)
-            return {"ok": True, "handled": True, "message": f"টাস্ক তৈরি হয়েছে: {task['title']}"}
-
         if lowered.startswith("add lead"):
             match = re.match(r"add lead:\s*(.+)", message, flags=re.IGNORECASE)
             details = match.group(1).strip() if match else message.replace("Add lead:", "", 1).strip()
             lead = add_lead(details)
             return {"ok": True, "handled": True, "message": f"লিড যোগ করা হয়েছে: {lead['name']}"}
-
-        if lowered.startswith("assign") and "to" in lowered:
-            match = re.match(r"assign\s+(.+?)\s+to\s+(.+)", message, flags=re.IGNORECASE)
-            if match:
-                task_title = match.group(1).strip()
-                member_name = match.group(2).strip()
-                return {"handled": True, **assign_task_to_member(task_title, member_name)}
 
         if lowered.startswith("remember"):
             # Accept "is", "are", "is:" and "are:", and let the value span newlines so a

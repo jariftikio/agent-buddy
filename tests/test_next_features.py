@@ -13,6 +13,7 @@ def test_team_command_and_approval_flow():
         json={"message": {"text": "Assign Rahim to design the homepage"}},
     )
     assert task_response.status_code == 200
+    assert "পেয়েছি" in task_response.get_json()["message"]
 
     approval_response = client.post(
         "/api/webhook/telegram",

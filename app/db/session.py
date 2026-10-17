@@ -6,9 +6,8 @@ from typing import Any, Iterable, List, Optional, Set
 
 DB_PATH = os.getenv("DB_PATH", "tri_buddy_os.db")
 
-# Every table this app owns lives in its own schema. The names it uses - leads,
-# tasks, reports - are exactly what a business product would also call its tables,
-# so sharing "public" with another application risks colliding with real data.
+# Every table this app owns lives in its own schema. Its table names are common
+# business-product names, so sharing "public" with another application risks collisions.
 DEFAULT_SCHEMA = "tri_buddy"
 
 
@@ -33,8 +32,8 @@ def schema_name() -> str:
         raise ValueError(f"Invalid DB_SCHEMA: {name!r}")
     if name.lower() == "public" and os.getenv("DB_ALLOW_PUBLIC_SCHEMA") != "1":
         raise ValueError(
-            "Refusing to use the public schema: this app's table names (leads, tasks, "
-            "reports, memories) are likely to collide with another product's. Set "
+            "Refusing to use the public schema: this app's table names (leads, memories) "
+            "are likely to collide with another product's. Set "
             "DB_SCHEMA to a dedicated schema, or DB_ALLOW_PUBLIC_SCHEMA=1 to override."
         )
     return name
@@ -191,16 +190,6 @@ def _init_db() -> None:
     with get_db_connection() as conn:
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                assignee TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
             CREATE TABLE IF NOT EXISTS leads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -217,20 +206,6 @@ def _init_db() -> None:
                 value TEXT NOT NULL
             )
             """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slack_user_id TEXT NOT NULL,
-                user_name TEXT,
-                text TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_reports_user ON reports (slack_user_id)"
         )
         _migrate_leads(conn)
         conn.commit()

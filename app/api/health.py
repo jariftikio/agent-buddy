@@ -8,7 +8,6 @@ from flask import Blueprint, jsonify, request
 
 from app.agent.prompt import build_prompt
 from app.db.session import db_status
-from app.services import slack
 from app.services.models import (
     AllModelsUnavailable,
     complete,
@@ -22,11 +21,7 @@ health_bp = Blueprint("health", __name__)
 
 
 def _authorized() -> bool:
-    """Detailed diagnostics require HEALTH_TOKEN.
-
-    /health is public on Render, so quota, credit and key details are only
-    returned to a caller that proves it holds the token.
-    """
+    """Detailed diagnostics require HEALTH_TOKEN."""
     token = os.getenv("HEALTH_TOKEN", "").strip()
     if not token:
         return False
@@ -35,14 +30,14 @@ def _authorized() -> bool:
 
 
 def _check_openrouter(detailed: bool) -> Dict[str, Any]:
-    """Validate the API key without making a model request.
-
-    GET /key checks auth and reports quota without consuming a model request,
-    so this stays safe to call on every health check.
-    """
+    """Validate the API key without making a model request."""
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
-        return {"configured": False, "reachable": False, "error": "OPENROUTER_API_KEY is not set"}
+        return {
+            "configured": False,
+            "reachable": False,
+            "error": "OPENROUTER_API_KEY is not set",
+        }
 
     base_url = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1").rstrip("/")
     try:
@@ -55,7 +50,12 @@ def _check_openrouter(detailed: bool) -> Dict[str, Any]:
         return {"configured": True, "reachable": False, "error": str(error)[:200]}
 
     if response.status_code == 401:
-        return {"configured": True, "reachable": True, "key_valid": False, "error": "key rejected (401)"}
+        return {
+            "configured": True,
+            "reachable": True,
+            "key_valid": False,
+            "error": "key rejected (401)",
+        }
 
     if not response.ok:
         return {
@@ -65,8 +65,11 @@ def _check_openrouter(detailed: bool) -> Dict[str, Any]:
             "error": f"status {response.status_code}",
         }
 
-    result: Dict[str, Any] = {"configured": True, "reachable": True, "key_valid": True}
-
+    result: Dict[str, Any] = {
+        "configured": True,
+        "reachable": True,
+        "key_valid": True,
+    }
     if detailed:
         data = response.json().get("data", {})
         free_requests = data.get("free_model_daily_requests") or {}
@@ -85,85 +88,46 @@ def _check_openrouter(detailed: bool) -> Dict[str, Any]:
     return result
 
 
-def _check_slack(detailed: bool) -> Dict[str, Any]:
-    """Validate the Slack bot token with auth.test.
-
-    auth.test is free, read-only and has no side effects, so it is safe on every
-    health check. It is the only way to tell a good token from a rotated one
-    without posting a message into somebody's workspace.
-    """
-    signing = bool(slack.signing_secret())
-    token = slack.bot_token()
-
-    if not token:
-        return {"configured": False, "signing_secret_set": signing,
-                "error": "SLACK_BOT_TOKEN is not set"}
-
-    try:
-        response = requests.post(
-            "https://slack.com/api/auth.test",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        data = response.json()
-    except (requests.RequestException, ValueError) as error:
-        return {"configured": True, "signing_secret_set": signing,
-                "token_valid": False, "error": str(error)[:200]}
-
-    if not data.get("ok"):
-        return {"configured": True, "signing_secret_set": signing,
-                "token_valid": False, "error": data.get("error", "unknown")}
-
-    result: Dict[str, Any] = {"configured": True, "signing_secret_set": signing,
-                              "token_valid": True}
-    if detailed:
-        result["team"] = data.get("team")
-        result["bot_user_id"] = data.get("user_id")
-        result["bot_name"] = data.get("user")
-    return result
-
-
 def _check_database(detailed: bool) -> Dict[str, Any]:
     status = db_status()
     if detailed:
         return status
-    # Public view: enough to see it is broken, nothing about where it lives.
     return {"backend": status["backend"], "connected": status.get("connected", False)}
 
 
 @health_bp.get("/health")
 def health():
-    """Liveness plus OpenRouter configuration status.
-
-    Always 200 by default: if OpenRouter is down the service itself is still
-    healthy and degrades gracefully, so a non-2xx here would only make Render
-    restart a working process. Pass ?strict=1 for a monitor that wants 503
-    when OpenRouter is unreachable.
-    """
+    """Report service, OpenRouter, and database health."""
     detailed = _authorized()
     openrouter = _check_openrouter(detailed)
 
     chain = get_model_chain()
-    models: Dict[str, Any] = {"chain_length": len(chain), "all_free": all(is_free(m) for m in chain)}
+    models: Dict[str, Any] = {
+        "chain_length": len(chain),
+        "all_free": all(is_free(model) for model in chain),
+    }
     if detailed:
         models["chain"] = chain
-        models["paid_models"] = [m for m in chain if not is_free(m)]
+        models["paid_models"] = [model for model in chain if not is_free(model)]
 
+    database = _check_database(detailed)
     payload: Dict[str, Any] = {
         "status": "ok",
         "service": "tri-buddy-agent",
         "openrouter": openrouter,
         "models": models,
-        "slack": _check_slack(detailed),
-        "database": _check_database(detailed),
+        "database": database,
         "detail": "full" if detailed else "public",
     }
 
-    # Opt-in live generation: costs one free-model request, so never automatic.
     if detailed and request.args.get("probe") == "model":
         try:
             result = complete(build_prompt(), "Reply with exactly: OK")
-            payload["probe"] = {"ok": True, "answered_by": result["model"], "reply": result["content"][:80]}
+            payload["probe"] = {
+                "ok": True,
+                "answered_by": result["model"],
+                "reply": result["content"][:80],
+            }
         except AllModelsUnavailable as error:
             payload["probe"] = {
                 "ok": False,
@@ -174,13 +138,11 @@ def health():
     healthy = (
         openrouter.get("reachable")
         and openrouter.get("key_valid")
-        and payload["database"].get("connected")
+        and database.get("connected")
     )
-    if request.args.get("strict") == "1" and not healthy:
-        payload["status"] = "degraded"
-        return jsonify(payload), 503
-
     if not healthy:
         payload["status"] = "degraded"
+    if request.args.get("strict") == "1" and not healthy:
+        return jsonify(payload), 503
 
     return jsonify(payload), 200

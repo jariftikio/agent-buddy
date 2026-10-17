@@ -31,8 +31,7 @@ def pg(monkeypatch):
 
     session.init_db()
 
-    for module in ("app.tools.leads", "app.tools.reports", "app.tools.tasks",
-                   "app.services.memory"):
+    for module in ("app.tools.leads", "app.services.memory"):
         importlib.reload(importlib.import_module(module))
 
     yield session
@@ -48,7 +47,7 @@ def test_tables_land_in_our_schema_only(pg):
         ours = {r[0] for r in conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = ?",
             (SCHEMA,)).fetchall()}
-    assert {"tasks", "leads", "memories", "reports"} <= ours
+    assert {"leads", "memories"} <= ours
     assert "seo_audits" not in ours
 
 
@@ -57,7 +56,7 @@ def test_nothing_is_created_in_public(pg):
         public = {r[0] for r in conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         ).fetchall()}
-    assert not ({"tasks", "leads", "memories", "reports"} & public), (
+    assert not ({"leads", "memories"} & public), (
         "the bot must never create its tables in the public schema"
     )
 
@@ -89,17 +88,10 @@ def test_init_db_is_idempotent_and_keeps_rows(pg):
     assert len(recent_leads(10)) == 1, "re-running init_db must not drop rows"
 
 
-def test_insert_returns_an_id(pg):
-    from app.tools.reports import add_report
-
-    report = add_report("U1", "Rafi", "did the thing")
-    assert isinstance(report["id"], int) and report["id"] > 0
-
-
 def test_lead_ref_is_generated(pg):
     from app.tools.leads import create_lead
 
-    assert create_lead("Rahim", None, None, "", 55, "slack")["lead_ref"] == "LD-00001"
+    assert create_lead("Rahim", None, None, "", 55, "telegram")["lead_ref"] == "LD-00001"
 
 
 def test_memory_upsert_replaces(pg):
@@ -118,16 +110,6 @@ def test_bengali_round_trips(pg):
     memory = MemoryService()
     memory.remember("tagline", "বিক্রি ও বিলিং সহজ")
     assert memory.recall("tagline") == "বিক্রি ও বিলিং সহজ"
-
-
-def test_latest_per_person(pg):
-    from app.tools.reports import add_report, latest_per_person
-
-    add_report("U1", "Rafi", "old")
-    add_report("U1", "Rafi", "new")
-    add_report("U2", "Sumi", "hers")
-    latest = {r["user_name"]: r["text"] for r in latest_per_person()}
-    assert latest == {"Rafi": "new", "Sumi": "hers"}
 
 
 def test_duplicate_lead_detection(pg):

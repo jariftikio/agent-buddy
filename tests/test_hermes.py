@@ -92,7 +92,7 @@ def test_exhausted_chain_reports_rate_limited(monkeypatch):
 
 
 def test_commands_run_before_the_model(monkeypatch):
-    """"Add task:" must write to the database, not just get discussed by the model."""
+    """"Add lead:" must write to the database, not just get discussed by the model."""
     def exploding_complete(*args, **kwargs):
         raise AssertionError("the model must not be called for a known command")
 
@@ -104,11 +104,16 @@ def test_commands_run_before_the_model(monkeypatch):
     client = create_app(testing=True).test_client()
     response = client.post(
         "/api/webhook/telegram",
-        json={"message": {"text": "Add task: ship the webhook", "chat": {"id": 42}}},
+        json={
+            "message": {
+                "text": "Add lead: ABC Store, interested in WhatsApp SaaS",
+                "chat": {"id": 42},
+            }
+        },
     )
 
     assert response.status_code == 200
-    assert "টাস্ক" in response.get_json()["message"]
+    assert "লিড" in response.get_json()["message"]
 
 
 def test_rate_limited_chain_tells_the_user(monkeypatch):

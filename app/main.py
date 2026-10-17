@@ -1,7 +1,6 @@
 import hmac
 import logging
 import os
-import threading
 from typing import Any, Dict
 
 import requests
@@ -121,8 +120,7 @@ def telegram_webhook():
 
     orchestrator = current_app.config.get("agent_orchestrator")
 
-    # Deterministic commands ("Add task:", "Approve 3", ...) must run before the model,
-    # otherwise the model only talks about them and nothing is ever written to the database.
+    # Deterministic commands must run before the model so database writes are explicit.
     command_result = orchestrator.handle_message(prompt_content)
     if command_result.get("handled"):
         ai_text = command_result.get("message") or GENERIC_ERROR_REPLY
@@ -174,15 +172,6 @@ def telegram_webhook():
             return jsonify({"ok": False, "message": "Telegram message dispatch failed"}), 500
         return jsonify({"status": "dispatch_error"}), 500
 
-    # Lead capture runs after the reply is delivered, on its own thread, so an extra
-    # model call never delays the answer or risks Telegram's webhook timeout.
-    if not current_app.config["TESTING"]:
-        from app.api.slack import capture_lead_from
-
-        threading.Thread(
-            target=capture_lead_from, args=(prompt_content, "telegram"), daemon=True
-        ).start()
-
     if current_app.config["TESTING"]:
         return jsonify({"ok": True, "message": ai_text}), 200
 
@@ -202,11 +191,7 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify({"status": "ok", "service": "tri-buddy-agent"})
 
     from app.api.webhook import register_telegram_webhook, webhook_bp
-    from app.api.slack import slack_bp
-    from app.api.tasks import tasks_bp
     app.register_blueprint(webhook_bp)
-    app.register_blueprint(slack_bp)
-    app.register_blueprint(tasks_bp)
     app.register_blueprint(health_bp)
     if not testing and os.getenv("RENDER_EXTERNAL_URL", "").strip():
         register_telegram_webhook()

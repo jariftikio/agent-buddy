@@ -80,15 +80,17 @@ Configuration:
 Known commands are matched *before* the model runs, so they actually write to the database:
 
 ```
-Add task: <title>
 Add lead: <details>
-Assign <task> to <person>
 Remember that my <thing> is <value>
 What do you know
 Draft a proposal email for <client>   ->  then: Approve <id>
 ```
 
 Anything else goes to Hermes.
+
+Task assignment, team reports, Slack messaging, automatic lead capture, and pull-request
+reviews are not enabled in this release. Leads can still be added explicitly with
+`Add lead: <details>`.
 
 ## Storage
 
@@ -133,108 +135,6 @@ TEST_DATABASE_URL=postgresql:///some_scratch_db python -m pytest tests/test_post
 
 Those tests create and drop their own `tri_buddy_test` schema and assert that nothing
 lands in `public`.
-
-## Slack setup
-
-The bot serves Slack from the same Flask process as Telegram. HTTP Events API, not Socket
-Mode: Socket Mode needs a persistent WebSocket and a always-on worker, which a free Render
-instance is not.
-
-### Endpoints
-
-| URL | Use |
-|---|---|
-| `POST /slack/events` | DMs and `@mentions` (also answers Slack's URL verification) |
-| `POST /slack/commands` | slash commands |
-
-### Slash commands
-
-| Command | Does |
-|---|---|
-| `/daily <text>` | save today's report |
-| `/report <text>` | alias for `/daily` |
-| `/status` | your last 5 reports |
-| `/status @someone` | that person's last 5 reports |
-| `/team` | most recent report from each teammate |
-| `/ask <question>` | ask Hermes, with team reports and stored facts in context |
-| `/lead Name - Business - Phone - Notes` | save a lead and post it to the lead channel |
-| `/leads` | the 10 most recent leads |
-
-A plain DM or an `@mention` goes straight to Hermes.
-
-### Lead capture
-
-Leads are stored in the `leads` table and announced in `SLACK_LEAD_CHANNEL`
-(default `lead_hub`). Score is out of 100 and computed in code, not by the model:
-business +30, asked about pricing or trial +25, shared a phone number +25, clear buying
-intent +20. At 55 or above a lead is saved automatically.
-
-A chat completion cannot save anything by itself, so capture runs as a separate step
-after the reply has been sent: a keyword and phone-number pre-filter decides whether the
-message is worth a second model call, that call extracts the fields as JSON, and the score
-is computed from them. The phone number is always taken from the message by regex rather
-than from the model, so a hallucinated number cannot be stored. Duplicate phone numbers
-and names are skipped, and a Slack posting failure never loses the lead.
-
-**The bot must be a member of the lead channel.** With only `chat:write` it cannot post to
-a channel it has not joined; Slack replies `not_in_channel` and the failure is otherwise
-silent. Either invite it (`/invite @Babosayee Second brain` in the channel) or add the
-`chat:write.public` scope. Setting `SLACK_LEAD_CHANNEL` to the channel ID (`C0...`) avoids
-name-resolution problems.
-
-### PR review
-
-`.github/workflows/pr-review.yml` runs on every pull request (opened, synchronised,
-reopened), fetches the diff with the workflow's own `GITHUB_TOKEN`, and POSTs it to
-`POST /tasks/pr-review`. The service reviews it and posts to `SLACK_DEV_CHANNEL`
-(default `byabosayee_devs`). Same `HEALTH_TOKEN` as the other task endpoints, and
-`?dry=1` returns the review without posting.
-
-The diff is sent *to* the service rather than fetched *by* it, so no GitHub token is
-stored in Render. Reviews of the same PR are deduplicated by a concurrency group, so
-pushing three times queues one review, not three. Diffs over 60k characters are truncated
-and the report says so.
-
-The review sees the diff and nothing else - not the rest of the codebase, the tests, or
-CI - and the prompt forbids claiming otherwise: no invented files or line numbers, no
-statements about tests passing, and uncertainty phrased as "if X is not handled in the
-caller, this would ..." rather than asserted as a bug. Every post carries that caveat. A
-failed review posts "nothing was checked" rather than staying silent, because silence
-reads as approval. The workflow never fails the PR.
-
-It is a first-pass reviewer on a free model, not a gate.
-
-### Bot token scopes
-
-`commands`, `chat:write`, `app_mentions:read`, `im:history`, `im:read`, `im:write`,
-`users:read`.
-
-### App config
-
-1. **Slash Commands** - add each command above, Request URL `https://<host>/slack/commands`.
-2. **Event Subscriptions** - Request URL `https://<host>/slack/events`. Slack sends a
-   `url_verification` challenge, which the endpoint echoes back. Subscribe to bot events
-   `message.im` and `app_mention`.
-3. **Interactivity** - not needed; there are no buttons or modals yet.
-4. Reinstall the app after changing scopes.
-
-### Environment
-
-`SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN`, both set in the Render dashboard
-(`sync: false` in the blueprint). Requests are rejected with 403 unless they carry a valid
-Slack v0 signature within a 5 minute window, and an unset signing secret fails closed.
-
-### The 3-second rule
-
-Slack requires an acknowledgement within 3 seconds, and a Hermes reply takes 8-30. So every
-handler acks immediately and finishes the work on a background thread, delivering the answer
-through `response_url` (slash commands) or `chat.postMessage` (events). Measured ack latency
-is well under a second against a deliberately slow model.
-
-Two consequences worth knowing. Slack retries anything it believes failed, so requests
-carrying `X-Slack-Retry-Num` are dropped to avoid answering twice. And the background thread
-lives in the web process: if Render recycles or sleeps the instance mid-flight, that one
-answer is lost. On a free instance a cold start can also swallow the first request after idle.
 
 ## Seeing images and web pages
 

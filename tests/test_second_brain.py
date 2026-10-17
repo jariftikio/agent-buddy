@@ -27,18 +27,16 @@ def fresh_db(monkeypatch):
 
 # --- persistence: the DROP TABLE regression -------------------------------------
 
-def test_restart_does_not_wipe_tasks_and_leads(fresh_db):
-    """init_db() runs on every app start, so it must never drop existing rows."""
+def test_restart_does_not_wipe_leads(fresh_db):
+    """init_db() runs on every app start, so it must preserve lead rows."""
     fresh_db.init_db()
     with fresh_db.get_db_connection() as conn:
-        conn.execute("INSERT INTO tasks (title) VALUES ('ship the deploy')")
         conn.execute("INSERT INTO leads (name) VALUES ('ABC Store')")
         conn.commit()
 
     fresh_db.init_db()  # simulate a restart
 
     with fresh_db.get_db_connection() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 1
 
 
@@ -46,7 +44,7 @@ def test_init_db_is_idempotent(fresh_db):
     for _ in range(3):
         fresh_db.init_db()
     with fresh_db.get_db_connection() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 0
 
 
 # --- memory injection -----------------------------------------------------------
