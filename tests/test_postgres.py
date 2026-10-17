@@ -32,7 +32,7 @@ def pg(monkeypatch):
     session.init_db()
 
     for module in ("app.tools.leads", "app.tools.reports", "app.tools.tasks",
-                   "app.services.memory", "app.tools.seo_report"):
+                   "app.services.memory"):
         importlib.reload(importlib.import_module(module))
 
     yield session
@@ -48,7 +48,8 @@ def test_tables_land_in_our_schema_only(pg):
         ours = {r[0] for r in conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = ?",
             (SCHEMA,)).fetchall()}
-    assert {"tasks", "leads", "memories", "reports", "seo_audits"} <= ours
+    assert {"tasks", "leads", "memories", "reports"} <= ours
+    assert "seo_audits" not in ours
 
 
 def test_nothing_is_created_in_public(pg):
@@ -56,7 +57,7 @@ def test_nothing_is_created_in_public(pg):
         public = {r[0] for r in conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         ).fetchall()}
-    assert not ({"tasks", "leads", "memories", "reports", "seo_audits"} & public), (
+    assert not ({"tasks", "leads", "memories", "reports"} & public), (
         "the bot must never create its tables in the public schema"
     )
 
@@ -135,11 +136,3 @@ def test_duplicate_lead_detection(pg):
     create_lead("Rahim", "01712345678", "Garments", "", 80, "telegram")
     assert lead_exists("01712345678", "Someone") is True
     assert lead_exists("01999999999", "Nobody") is False
-
-
-def test_seo_audit_round_trips(pg):
-    from app.tools.seo_report import previous_audit, save_audit
-
-    save_audit({"url": "https://babosayee.shop/", "checked_at": "2026-10-05T03:00:00+00:00",
-                "passed": 15, "total": 17, "checks": []})
-    assert previous_audit("https://babosayee.shop/")["passed"] == 15

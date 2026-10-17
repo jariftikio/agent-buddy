@@ -140,7 +140,7 @@ def test_prompt_forbids_inventing_product_facts():
 
 def test_prompt_covers_the_second_brain_jobs():
     prompt = build_prompt()
-    for job in ("lead generation", "social media and branding", "PR review", "SEO",
+    for job in ("lead generation", "social media and branding", "PR review",
                 "interpreting analytics", "customer support"):
         assert job in prompt
 

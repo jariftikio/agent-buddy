@@ -41,6 +41,7 @@ def test_public_health_is_ok_and_leaks_nothing(monkeypatch):
     assert body["status"] == "ok"
     assert body["detail"] == "public"
     assert body["openrouter"] == {"configured": True, "reachable": True, "key_valid": True}
+    assert "ga4" not in body
 
     # None of the sensitive fields may appear without the token.
     flat = str(body)
@@ -48,6 +49,12 @@ def test_public_health_is_ok_and_leaks_nothing(monkeypatch):
         assert secret not in flat
     assert "chain" not in body["models"]
     assert body["models"]["all_free"] is True
+
+
+def test_removed_reporting_endpoints_are_not_registered(monkeypatch):
+    client = _client(monkeypatch)
+    assert client.post("/tasks/seo-report").status_code == 404
+    assert client.post("/tasks/ga-report").status_code == 404
 
 
 def test_token_unlocks_diagnostics(monkeypatch):
@@ -197,53 +204,25 @@ def test_token_reveals_slack_workspace_details(monkeypatch):
     assert body["slack"]["bot_user_id"] == "U0BOT"
 
 
-# --- lead channel access probe --------------------------------------------------
+# --- Slack scheduled-message removal -------------------------------------------
 
-def test_lead_channel_probe_reports_access(monkeypatch):
+def test_health_does_not_schedule_slack_messages(monkeypatch):
     import app.services.slack as slack_svc
 
+    client = _slack_client(monkeypatch, {"ok": True, "team": "Babosayee",
+                                         "user_id": "U0BOT", "user": "secondbrain"})
     calls = []
 
     def fake_post(url, **kwargs):
         calls.append(url)
-        if "scheduleMessage" in url:
-            return FakeResponse(200, {"ok": True, "scheduled_message_id": "Q1", "channel": "C1"})
-        return FakeResponse(200, {"ok": True})
+        return FakeResponse(200, {"ok": True, "team": "Babosayee",
+                                  "user_id": "U0BOT", "user": "secondbrain"})
 
-    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
     monkeypatch.setattr(slack_svc.requests, "post", fake_post)
+    body = client.get("/health?token=s3cret-health&probe=slack").get_json()
 
-    result = slack_svc.can_post_to_lead_channel()
-    assert result["can_post"] is True
-    assert any("deleteScheduledMessage" in c for c in calls), "the probe must cancel itself"
-
-
-def test_lead_channel_probe_detects_not_in_channel(monkeypatch):
-    import app.services.slack as slack_svc
-
-    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
-    monkeypatch.setattr(slack_svc.requests, "post",
-                        lambda *a, **k: FakeResponse(200, {"ok": False, "error": "not_in_channel"}))
-
-    result = slack_svc.can_post_to_lead_channel()
-    assert result["can_post"] is False
-    assert result["error"] == "not_in_channel"
-
-
-def test_lead_channel_probe_flags_failed_cleanup(monkeypatch):
-    import app.services.slack as slack_svc
-
-    def fake_post(url, **kwargs):
-        if "scheduleMessage" in url:
-            return FakeResponse(200, {"ok": True, "scheduled_message_id": "Q1", "channel": "C1"})
-        return FakeResponse(200, {"ok": False, "error": "invalid_scheduled_message_id"})
-
-    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
-    monkeypatch.setattr(slack_svc.requests, "post", fake_post)
-
-    result = slack_svc.can_post_to_lead_channel()
-    assert result["can_post"] is True
-    assert "cleanup_failed" in result, "a message that could not be cancelled must be surfaced"
+    assert "lead_channel" not in body
+    assert not any("scheduleMessage" in call for call in calls)
 
 
 # --- database status ------------------------------------------------------------

@@ -109,8 +109,8 @@ unqualified table names resolve against `public` - the exact collision the schem
 to prevent.
 
 On the free Supabase plan a project pauses after about 7 days of low activity, which this
-bot will not hit - it queries on every message plus the daily SEO run. Free projects get
-500 MB, far more than this needs.
+bot will not hit - it queries on every message. Free projects get 500 MB, far more than
+this needs.
 
 Switching backends does not copy data. Nothing currently lives long enough on Render's
 ephemeral disk for that to matter, but a Postgres switch does start empty.
@@ -178,27 +178,6 @@ silent. Either invite it (`/invite @Babosayee Second brain` in the channel) or a
 `chat:write.public` scope. Setting `SLACK_LEAD_CHANNEL` to the channel ID (`C0...`) avoids
 name-resolution problems.
 
-### Daily SEO report
-
-`POST /tasks/seo-report` audits `SEO_SITE_URL` and posts the result to
-`SLACK_SEO_CHANNEL` (default `babosayee_seo`). It takes the same `HEALTH_TOKEN`, as a
-`token=` query parameter or an `X-Health-Token` header, and `?dry=1` returns the report
-without posting.
-
-Everything in the report is measured from the live page: status, redirects, response
-time, page weight, title and meta description length, H1 count, canonical, indexability,
-viewport, `html lang`, Open Graph, image alt coverage, robots.txt and sitemap.xml. Each
-run is stored, so the next one can report what was fixed and what newly broke.
-
-**It contains no rankings, traffic, impressions or keyword data**, and says so in every
-post. Those need Search Console, which this bot cannot read. A report that quietly
-estimated them would be worse than no report.
-
-Render's free plan has no cron, so scheduling is external:
-`.github/workflows/daily-seo.yml` calls the endpoint at 03:00 UTC (09:00 Dhaka) and needs
-two repository secrets, `SERVICE_URL` and `HEALTH_TOKEN`. The call that wakes a sleeping
-instance is the same one that runs the check.
-
 ### PR review
 
 `.github/workflows/pr-review.yml` runs on every pull request (opened, synchronised,
@@ -220,29 +199,6 @@ failed review posts "nothing was checked" rather than staying silent, because si
 reads as approval. The workflow never fails the PR.
 
 It is a first-pass reviewer on a free model, not a gate.
-
-### Daily traffic report (GA4)
-
-`POST /tasks/ga-report` reads the GA4 Data API and posts to `SLACK_GA_CHANNEL`
-(defaults to the SEO channel). Same `HEALTH_TOKEN`, and `?dry=1` previews without posting.
-The morning workflow calls it right after the SEO check, so both land together.
-
-It reports yesterday's users, sessions, pageviews, average session, bounce rate and
-conversions, the top channels and pages, and live users from the realtime API. Every
-figure comes from the API; nothing is estimated, and a section that fails to load is
-named as missing rather than shown as zero.
-
-Setup:
-
-1. In Google Cloud, create a service account and download its JSON key.
-2. Enable the **Google Analytics Data API** for that project.
-3. In GA4 Admin → Property Access Management, add the service account's email as a
-   **Viewer**.
-4. In Render set `GA4_PROPERTY_ID` (the numeric id, not `G-XXXX`) and
-   `GA4_SERVICE_ACCOUNT_JSON` (the whole key file on one line).
-
-This uses `google-auth` with the REST API rather than `google-analytics-data`, which pulls
-in grpcio and protobuf - a much heavier build for no benefit here.
 
 ### Bot token scopes
 

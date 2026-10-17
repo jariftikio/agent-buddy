@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 
 from app.agent.prompt import build_prompt
 from app.db.session import db_status
-from app.services import ga4, slack
+from app.services import slack
 from app.services.models import (
     AllModelsUnavailable,
     complete,
@@ -131,13 +131,6 @@ def _check_database(detailed: bool) -> Dict[str, Any]:
     return {"backend": status["backend"], "connected": status.get("connected", False)}
 
 
-def _check_ga4(detailed: bool) -> Dict[str, Any]:
-    status = ga4.config_status()
-    if detailed:
-        return status
-    return {"configured": status["configured"]}
-
-
 @health_bp.get("/health")
 def health():
     """Liveness plus OpenRouter configuration status.
@@ -162,14 +155,9 @@ def health():
         "openrouter": openrouter,
         "models": models,
         "slack": _check_slack(detailed),
-        "ga4": _check_ga4(detailed),
         "database": _check_database(detailed),
         "detail": "full" if detailed else "public",
     }
-
-    # Opt-in: two Slack API calls, so not run on every health check.
-    if detailed and request.args.get("probe") == "slack":
-        payload["lead_channel"] = slack.can_post_to_lead_channel()
 
     # Opt-in live generation: costs one free-model request, so never automatic.
     if detailed and request.args.get("probe") == "model":
