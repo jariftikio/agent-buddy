@@ -3,7 +3,7 @@ import os
 import re
 
 import requests
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 
 from app.main import telegram_webhook
 
@@ -68,13 +68,19 @@ def proxy_webhook():
 @webhook_bp.get(TELEGRAM_WEBHOOK_PATH)
 def webhook_status():
     """Expose non-sensitive setup status for a simple endpoint check."""
-    configured = bool(
-        os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-        and os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
-    )
+    token_configured = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
+    secret_configured = bool(os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip())
+    public_url_configured = bool(os.getenv("RENDER_EXTERNAL_URL", "").strip())
+    registration_ready = token_configured and secret_configured and public_url_configured
     return jsonify({
         "status": "ok",
         "endpoint": TELEGRAM_WEBHOOK_PATH,
-        "credentials_configured": configured,
-        "registration": "automatic on Render startup",
+        "credentials_configured": token_configured and secret_configured,
+        "token_configured": token_configured,
+        "secret_configured": secret_configured,
+        "public_url_configured": public_url_configured,
+        "registration_ready": registration_ready,
+        "registration_status": current_app.config.get(
+            "telegram_webhook_registration_status", "unknown"
+        ),
     })

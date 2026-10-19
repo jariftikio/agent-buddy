@@ -160,11 +160,13 @@ does not have.
 
 ## Telegram setup
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the bot token into `TELEGRAM_BOT_TOKEN`.
-2. Send the bot a message, then call `https://api.telegram.org/bot<TOKEN>/getUpdates` to find your `chat.id` and set `TELEGRAM_CHAT_ID`.
+2. Set `TELEGRAM_WEBHOOK_SECRET` to a private value containing 1-256 letters, numbers, underscores, or hyphens. This is required: production rejects webhook updates without the matching secret header.
 3. For the production engine (`app.main:app`), point Telegram's webhook at `https://<your-host>/api/webhook/telegram`:
    ```bash
    curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
      -d "url=https://<your-host>/api/webhook/telegram" \
      -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
    ```
-   `secret_token` is optional but recommended; set the same value in `TELEGRAM_WEBHOOK_SECRET`.
+   On Render, registration happens automatically at startup when `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `RENDER_EXTERNAL_URL` are configured. Check `GET /api/webhook/telegram`: `registration_ready` must be `true` and `registration_status` should be `registered`. A `failed` status means startup logs will have the registration error; a service restart retries registration. The bot replies to the chat that sent each update; `TELEGRAM_CHAT_ID` is not needed for webhook replies.
+
+Long replies are split into messages within Telegram's 4,096-character limit.

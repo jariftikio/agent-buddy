@@ -3,6 +3,21 @@ from app.agent.orchestrator import AgentOrchestrator
 from app.db.session import init_db
 
 
+def test_telegram_webhook_status_reports_registration_requirements(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://example.onrender.com")
+
+    response = create_app(testing=True).test_client().get("/api/webhook/telegram")
+
+    assert response.status_code == 200
+    assert response.get_json()["token_configured"] is True
+    assert response.get_json()["secret_configured"] is False
+    assert response.get_json()["public_url_configured"] is True
+    assert response.get_json()["registration_ready"] is False
+    assert response.get_json()["registration_status"] == "not_attempted"
+
+
 def test_team_command_and_approval_flow():
     init_db()
     app = create_app(testing=True)

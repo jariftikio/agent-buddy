@@ -156,6 +156,54 @@ def test_model_outage_falls_back_to_the_orchestrator(monkeypatch):
     assert response.get_json()["message"] == "হ্যালো! আমি ট্রাই বাডি ওএস 🚀"
 
 
+def test_webhook_splits_long_agent_reply_into_telegram_messages(monkeypatch):
+    message = "A" * 9000
+    sent = []
+
+    monkeypatch.setattr(
+        "app.main.complete",
+        lambda *args, **kwargs: {"model": "test/model:free", "content": message},
+    )
+    monkeypatch.setattr(
+        "app.main.requests.post",
+        lambda url, json, timeout: sent.append(json["text"])
+        or FakeResponse(200, {"ok": True}),
+    )
+
+    client = create_app(testing=True).test_client()
+    response = client.post(
+        "/api/webhook/telegram",
+        json={"message": {"text": "Write a detailed report", "chat": {"id": 42}}},
+    )
+
+    assert response.status_code == 200
+    assert [len(chunk) for chunk in sent] == [4096, 4096, 808]
+    assert "".join(sent) == message
+    assert response.get_json()["message"] == message
+
+
+def test_webhook_reports_telegram_api_rejection(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.complete",
+        lambda *args, **kwargs: {"model": "test/model:free", "content": "answer"},
+    )
+    monkeypatch.setattr(
+        "app.main.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            200, {"ok": False, "description": "chat not found"}
+        ),
+    )
+
+    client = create_app(testing=True).test_client()
+    response = client.post(
+        "/api/webhook/telegram",
+        json={"message": {"text": "hello", "chat": {"id": 42}}},
+    )
+
+    assert response.status_code == 502
+    assert response.get_json()["status"] == "dispatch_error"
+
+
 def test_prompt_states_language_matching_and_llama_primary():
     prompt = build_prompt()
     assert "ব্যবসায়ী সুপার ইন্টেলিজেন্ট" in prompt

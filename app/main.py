@@ -14,6 +14,7 @@ from app.db.session import init_db
 from app.services.models import AllModelsUnavailable, complete
 from app.services.vision import describe, fetch_telegram_photo
 from app.tools.web import as_context, fetch_page, find_urls
+from telegram_client import split_telegram_message
 
 load_dotenv()
 
@@ -152,14 +153,48 @@ def telegram_webhook():
 
     logger.info("Prepared Telegram reply | chat_id=%s", chat_id)
 
-    telegram_payload = {"chat_id": chat_id, "text": ai_text}
     send_url = f"{TELEGRAM_API_URL}/sendMessage"
 
     logger.info("Sending reply to Telegram | chat_id=%s", chat_id)
     try:
-        dispatch_response = requests.post(send_url, json=telegram_payload, timeout=10)
-        dispatch_response.raise_for_status()
-        logger.info("Telegram dispatch success | chat_id=%s status=%s", chat_id, dispatch_response.status_code)
+        chunks = split_telegram_message(ai_text)
+        for index, chunk in enumerate(chunks, start=1):
+            dispatch_response = requests.post(
+                send_url,
+                json={"chat_id": chat_id, "text": chunk},
+                timeout=10,
+            )
+            dispatch_response.raise_for_status()
+            try:
+                telegram_result = dispatch_response.json()
+            except ValueError:
+                logger.error(
+                    "Telegram dispatch returned invalid JSON | chat_id=%s part=%s/%s",
+                    chat_id,
+                    index,
+                    len(chunks),
+                )
+                return jsonify({"status": "dispatch_error"}), 502
+
+            if not isinstance(telegram_result, dict) or telegram_result.get("ok") is not True:
+                logger.error(
+                    "Telegram rejected message | chat_id=%s part=%s/%s description=%s",
+                    chat_id,
+                    index,
+                    len(chunks),
+                    telegram_result.get("description", "invalid response")
+                    if isinstance(telegram_result, dict)
+                    else "invalid response",
+                )
+                return jsonify({"status": "dispatch_error"}), 502
+
+            logger.info(
+                "Telegram dispatch success | chat_id=%s part=%s/%s status=%s",
+                chat_id,
+                index,
+                len(chunks),
+                dispatch_response.status_code,
+            )
     except requests.RequestException as error:
         status_code = getattr(getattr(error, "response", None), "status_code", None)
         logger.error(
@@ -193,8 +228,15 @@ def create_app(testing: bool = False) -> Flask:
     from app.api.webhook import register_telegram_webhook, webhook_bp
     app.register_blueprint(webhook_bp)
     app.register_blueprint(health_bp)
-    if not testing and os.getenv("RENDER_EXTERNAL_URL", "").strip():
-        register_telegram_webhook()
+    registration_status = "not_attempted"
+    if not testing:
+        if os.getenv("RENDER_EXTERNAL_URL", "").strip():
+            registration_status = (
+                "registered" if register_telegram_webhook() else "failed"
+            )
+        else:
+            registration_status = "skipped_missing_public_url"
+    app.config["telegram_webhook_registration_status"] = registration_status
     return app
 
 

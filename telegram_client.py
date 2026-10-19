@@ -9,6 +9,22 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
+
+def split_telegram_message(text: str) -> list[str]:
+    chunks = []
+    while len(text) > TELEGRAM_MAX_MESSAGE_LENGTH:
+        split_at = text.rfind("\n", 0, TELEGRAM_MAX_MESSAGE_LENGTH + 1)
+        if split_at <= 0:
+            split_at = text.rfind(" ", 0, TELEGRAM_MAX_MESSAGE_LENGTH + 1)
+        if split_at <= 0:
+            split_at = TELEGRAM_MAX_MESSAGE_LENGTH
+        chunks.append(text[:split_at])
+        text = text[split_at:]
+    chunks.append(text)
+    return chunks
+
 
 class TelegramClient:
     def __init__(self) -> None:
@@ -42,18 +58,35 @@ class TelegramClient:
         if not chat_id:
             return {"ok": False, "error": "TELEGRAM_CHAT_ID is not configured"}
 
-        logger.info("Sending Telegram message | chat_id=%s text=%s", chat_id, text)
-
         try:
-            response = requests.post(
-                f"{self.base_url}/sendMessage",
-                json={"chat_id": chat_id, "text": text},
-                timeout=20,
-            )
-            logger.info("Telegram response | status=%s body=%s", response.status_code, response.text[:500])
-            if response.ok:
-                return {"ok": True, "body": response.json()}
-            return {"ok": False, "error": response.text[:500], "status": response.status_code}
+            response_body: Dict[str, Any] = {}
+            chunks = split_telegram_message(text)
+            for index, chunk in enumerate(chunks, start=1):
+                logger.info(
+                    "Sending Telegram message | chat_id=%s part=%s/%s text=%s",
+                    chat_id,
+                    index,
+                    len(chunks),
+                    chunk,
+                )
+                response = requests.post(
+                    f"{self.base_url}/sendMessage",
+                    json={"chat_id": chat_id, "text": chunk},
+                    timeout=20,
+                )
+                logger.info(
+                    "Telegram response | status=%s body=%s",
+                    response.status_code,
+                    response.text[:500],
+                )
+                if not response.ok:
+                    return {
+                        "ok": False,
+                        "error": response.text[:500],
+                        "status": response.status_code,
+                    }
+                response_body = response.json()
+            return {"ok": True, "body": response_body}
         except requests.RequestException as exc:
             logger.warning("Telegram request failed | error=%s", exc)
             return {"ok": False, "error": str(exc)}
