@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app.main:app
+    startCommand: gunicorn app.main:app --timeout 120 --threads 8 --graceful-timeout 60
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8
@@ -18,12 +18,20 @@ services:
         value: 5
       - key: OPENROUTER_API_KEY
         sync: false
+      # Fallbacks only. meta-llama/llama-3.1-70b-instruct is pinned as the primary
+      # in app/services/models.py and always answers first, so it is not listed here.
       - key: OPENROUTER_MODELS
-        value: meta-llama/llama-3.1-70b-instruct,nvidia/nemotron-3-ultra-550b-a55b:free,qwen/qwen3.8-27b:free,apodex/apodex-1.1-mini:free
+        value: nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free
       - key: OPENROUTER_TIMEOUT
         value: 25
+      - key: OPENROUTER_BUDGET
+        value: 45
+      - key: WEBHOOK_WORKERS
+        value: 4
+      - key: WEBHOOK_MAX_PENDING
+        value: 32
       - key: OPENROUTER_VISION_MODELS
-        value: qwen/qwen3.8-27b:free,google/gemma-4-31b-it:free,openrouter/free
+        value: nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free,openrouter/free
       - key: HEALTH_TOKEN
         sync: false
       - key: TELEGRAM_BOT_TOKEN

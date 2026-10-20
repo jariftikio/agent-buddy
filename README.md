@@ -2,18 +2,50 @@
 
 Phase 1 scaffold for a lightweight bot service.
 
-## Files
-- bot.py: Flask app exposing health and message endpoints.
-- telegram_client.py: small helper for talking to the Telegram Bot API.
-- requirements.txt: Python dependencies.
+## Layout
+
+The production engine is `app.main:app` -- that is what the Procfile and Render start
+command run, and the only stack that serves Telegram.
+
+- `main.py` - local entry point; serves `app.main:app` on `$PORT`.
+- `app/main.py` - the Flask app and the Telegram webhook handler.
+- `app/agent/` - `orchestrator.py` (the deterministic commands) and `prompt.py` (Hermes'
+  system prompt).
+- `app/services/` - `models.py` (the text model chain), `vision.py` (the image chain),
+  `memory.py` (stored facts).
+- `app/tools/` - `web.py` (link fetching, SSRF-guarded), `leads.py`, `approvals.py`,
+  `email_drafts.py`.
+- `app/db/session.py` - SQLite by default, Postgres when `DATABASE_URL` is set.
+- `telegram_client.py` - Telegram Bot API helper and the 4,096-character splitter.
+
+`app.py`, `routes/`, `services/`, `utils/` and `openrouter_client.py` are an earlier
+scaffold that builds a *separate* Flask app and is not what runs in production. Editing
+them has no effect on the bot -- note that `services/` and `app/services/` are different
+packages. They are dead weight and the next thing worth deleting.
 
 ## Local run
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 bot.py
+cp .env.example .env     # then fill it in; .env is gitignored, .env.example is not
+python3 main.py
 ```
+
+`load_dotenv()` reads `.env` and nothing else, so values left in `.env.example` are never
+loaded.
+
+Tests run on SQLite regardless of what is in your `.env` -- `tests/conftest.py` clears
+`DATABASE_URL` so a real connection string cannot redirect the suite at production.
+`pytest` lives in `requirements-dev.txt`, which Render does not install:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+There is no CI. The suite is the only gate before a deploy, so run it yourself.
 
 ## Endpoints
 - GET / -> service status
@@ -51,17 +83,24 @@ curl "https://<your-host>/health?token=<HEALTH_TOKEN>&probe=model"
 
 ## Agent model (Hermes)
 
-The live system prompt lives in `app/agent/prompt.py`. The agent uses Llama 3.1 70B as its
-primary OpenRouter model (which may incur charges), then falls back to free models. It
-replies in whichever language the user wrote in (Bengali in -> Bengali out, English in ->
-English out).
+Hermes is a general-purpose assistant and second brain for the team that runs it: it
+reasons over whatever is in the message, reads images and explicitly linked pages, recalls
+saved facts, and drafts, reviews, analyses and writes code. It replies in whichever
+language the user wrote in (Bengali in -> Bengali out, English in -> English out). The live
+system prompt is `app/agent/prompt.py`.
 
-Model fallback chain, tried in order:
+**Llama 3.1 70B always answers first.** `PRIMARY_MODEL` in `app/services/models.py` is
+pinned at the head of the chain and no environment variable can displace it, so the paid
+model always gets the first attempt and a stale dashboard value cannot quietly demote it
+behind a free one. It is paid, so **it may incur charges on every message** -- that is the
+deliberate trade for the best model answering first.
 
-1. `meta-llama/llama-3.1-70b-instruct` - primary; may incur charges
+Chain, tried in order:
+
+1. `meta-llama/llama-3.1-70b-instruct` - primary, always first; paid, may incur charges
 2. `nvidia/nemotron-3-ultra-550b-a55b:free`
-3. `qwen/qwen3.8-27b:free`
-4. `apodex/apodex-1.1-mini:free`
+3. `nvidia/nemotron-3-super-120b-a12b:free`
+4. `google/gemma-4-31b-it:free`
 
 `app/services/models.py` walks the chain, skipping any model that returns 402/403/408/429/5xx
 or an empty body. If every model fails due to quota or rate limits the user is told to retry
@@ -71,11 +110,21 @@ stay accurate when these environment variables change.
 
 Configuration:
 
-- `OPENROUTER_MODELS` - comma-separated chain. Overrides the default chain; include paid
-  models only when you intend to allow their charges.
-- `OPENROUTER_MODEL` - single primary prepended to the default chain. **Ignored unless it is
-  a `:free` model**, so a stale paid value cannot override the configured primary.
+- `OPENROUTER_MODELS` - comma-separated **fallback** list, replacing the defaults. The
+  primary is prepended regardless and deduplicated out of this list, so it cannot be
+  dropped or reordered. A value that parses to nothing keeps the default fallbacks rather
+  than leaving the primary with none. Include paid models here only when you intend to
+  allow their charges.
+- `OPENROUTER_MODEL` - adds one free model as the **first fallback**, after the primary.
+  It used to set the primary; the primary is no longer something the environment decides.
+  **Ignored unless it is a `:free` model**, so an unreviewed paid model cannot join the
+  chain by accident.
 - `OPENROUTER_TIMEOUT` - per-attempt timeout in seconds (default 25).
+- `OPENROUTER_BUDGET` - ceiling in seconds for the *whole* chain (default 45). The
+  chain stops early rather than spending `OPENROUTER_TIMEOUT` on every model: four
+  attempts at 25s outlast both the gunicorn worker timeout and Telegram's wait for
+  the webhook, and a worker killed mid-request sends no reply at all. Keep it
+  comfortably below the `--timeout` in the start command.
 
 Known commands are matched *before* the model runs, so they actually write to the database:
 
@@ -101,7 +150,7 @@ Supabase-specific here.
 **This app never shares a schema with anything else.** Its table names - `leads`, `tasks`,
 `reports`, `memories` - are exactly what a business product would also use, so every table
 lives in `DB_SCHEMA` (default `tri_buddy`) and `search_path` is pinned to it on each
-connection. Pointing `DATABASE_URL` at a database that also holds the Babosayee product
+connection. Pointing `DATABASE_URL` at a database that also holds another product
 is therefore safe: nothing unqualified can reach another schema's tables.
 
 Using `public` is refused outright unless `DB_ALLOW_PUBLIC_SCHEMA=1`, and the schema name
@@ -140,7 +189,7 @@ lands in `public`.
 
 Send the bot a photo on Telegram and it reads it; the caption becomes the question. Images
 go to a separate free vision chain (`OPENROUTER_VISION_MODELS`, default
-`qwen/qwen3.8-27b:free`, then gemma, then `openrouter/free`), with the same fallback
+`nvidia/nemotron-3.5-super-vl:free`, then gemma, then `openrouter/free`), with the same fallback
 behaviour as the text chain. Images over 5MB are rejected.
 
 Put a link in a message and the page is fetched and included as context, up to three links
@@ -157,6 +206,38 @@ found inside them.
 
 Slack image uploads are *not* supported - that needs the `files:read` scope, which the app
 does not have.
+
+## How a Telegram update is handled
+
+Telegram only waits so long for the webhook to answer, and it redelivers the update when
+it does not. Running the model chain inside the request therefore produced duplicate
+replies at best, and at worst none at all: gunicorn's default worker timeout is 30s, so a
+worker walking a four-model chain was killed before it ever called `sendMessage`.
+
+So the request does the cheap part only -- check the secret, parse the update, pull out the
+text and any photo `file_id` -- and returns `200 {"status": "accepted"}` straight away.
+Everything slow (photo download, page fetches, commands, the model chain, sending the
+reply) runs on a background worker. Nothing is waiting on that half, so it logs its own
+failures and always sends *something*: the command result, the model's answer, the
+rate-limit notice, or a plain error.
+
+Two time limits keep a reply from being cut off:
+
+- `OPENROUTER_BUDGET` (45s) caps the whole model chain, and `FETCH_BUDGET` (20s, in
+  `app/tools/web.py`) caps link fetching, so neither can starve the other.
+- `--graceful-timeout 60` in the start command must outlast those, or a deploy kills
+  replies that are still in flight.
+
+Concurrency:
+
+- `WEBHOOK_WORKERS` (4) - updates processed at once. The pool is FIFO, so a burst of slow
+  model calls does delay whatever is queued behind it.
+- `WEBHOOK_MAX_PENDING` (32) - queue depth. Past it the sender is told to retry rather than
+  having the backlog grow unbounded on a small instance.
+
+An update is acknowledged before it is processed, so a worker that dies mid-reply loses
+that update instead of having Telegram redeliver it. That is the deliberate trade for not
+being redelivered on every slow request.
 
 ## Telegram setup
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the bot token into `TELEGRAM_BOT_TOKEN`.

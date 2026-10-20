@@ -2,6 +2,7 @@ import ipaddress
 import logging
 import re
 import socket
+import time
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
@@ -10,10 +11,14 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "BabosayeeSecondBrain/1.0 (+https://babosayee.shop)"
+USER_AGENT = "Hermes/1.0"
 MAX_PAGE_CHARS = 12_000
 MAX_BYTES = 3_000_000
 FETCH_TIMEOUT = 15
+
+# Fetching runs before the model chain, inside the same webhook request, so three
+# slow links must not eat the time the model needs to answer at all.
+FETCH_BUDGET = 20
 
 URL_RE = re.compile(r"https?://[^\s<>\"')]+")
 
@@ -48,7 +53,7 @@ def _is_public(host: str) -> bool:
     return True
 
 
-def fetch_page(url: str) -> Dict[str, Any]:
+def fetch_page(url: str, timeout: float = FETCH_TIMEOUT) -> Dict[str, Any]:
     """Fetch a page and return its readable text. Never raises."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
@@ -59,7 +64,7 @@ def fetch_page(url: str) -> Dict[str, Any]:
 
     try:
         response = requests.get(
-            url, timeout=FETCH_TIMEOUT, headers={"User-Agent": USER_AGENT},
+            url, timeout=timeout, headers={"User-Agent": USER_AGENT},
             allow_redirects=True, stream=True,
         )
         content = response.raw.read(MAX_BYTES, decode_content=True)
@@ -85,6 +90,20 @@ def fetch_page(url: str) -> Dict[str, Any]:
         "ok": True, "url": response.url, "title": title,
         "text": body[:MAX_PAGE_CHARS], "truncated": truncated,
     }
+
+
+def fetch_pages(urls: List[str], budget: float = FETCH_BUDGET) -> List[Dict[str, Any]]:
+    """Fetch several pages under one shared time budget. Never raises."""
+    deadline = time.monotonic() + budget
+    pages = []
+    for url in urls:
+        remaining = deadline - time.monotonic()
+        if remaining < 2:
+            logger.warning("Fetch budget spent, skipping remaining links | url=%s", url)
+            pages.append({"ok": False, "url": url, "error": "skipped: fetch budget spent"})
+            continue
+        pages.append(fetch_page(url, timeout=min(FETCH_TIMEOUT, remaining)))
+    return pages
 
 
 def as_context(pages: List[Dict[str, Any]]) -> str:

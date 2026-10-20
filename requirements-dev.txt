@@ -1,0 +1,6 @@
+# Test-only dependencies. Not installed on Render: the production build runs
+# requirements.txt alone, and the suite never runs there.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   python -m pytest
+pytest==8.4.2

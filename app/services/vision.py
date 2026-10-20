@@ -1,22 +1,33 @@
 import base64
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
 
-from app.services.models import AllModelsUnavailable, FALLBACK_STATUSES, is_free
+from app.services.models import (
+    AllModelsUnavailable,
+    FALLBACK_STATUSES,
+    attempt_timeout,
+    budget,
+    is_free,
+)
 
 logger = logging.getLogger(__name__)
 
 # Free models that accept image input. Verified to answer with an image attached.
 DEFAULT_VISION_CHAIN: List[str] = [
-    "qwen/qwen3.8-27b:free",
+    "nvidia/nemotron-3.5-super-vl:free",
     "google/gemma-4-31b-it:free",
     "openrouter/free",
 ]
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+# Per-model ceiling. An image costs a vision model more than a text prompt, so this
+# is more generous than the text chain's -- the shared budget still caps the total.
+VISION_TIMEOUT = 60
 
 
 def get_vision_chain() -> List[str]:
@@ -51,20 +62,38 @@ def describe(
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
         "HTTP-Referer": os.getenv("APP_URL", "https://onrender.com"),
-        "X-Title": "Babosayee Super Intelligent",
+        "X-Title": "Hermes",
         "Content-Type": "application/json",
     }
     base_url = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1").rstrip("/")
 
     failures: List[Dict[str, Any]] = []
+    # Downloading the photo already spent part of the webhook's time, so the chain
+    # gets the same bounded budget as the text path rather than three full attempts.
+    deadline = time.monotonic() + budget()
+
     for model in get_vision_chain():
         if not is_free(model):
             logger.warning("Skipping paid vision model %s", model)
             continue
+
+        timeout = attempt_timeout(deadline, VISION_TIMEOUT)
+        if not timeout:
+            logger.warning("Response budget spent, skipping remaining vision models")
+            failures.append(
+                {
+                    "model": model,
+                    "status": None,
+                    "error": "response budget spent",
+                    "skipped": True,
+                }
+            )
+            break
+
         try:
             response = requests.post(
                 f"{base_url}/chat/completions", headers=headers,
-                json={"model": model, "messages": messages}, timeout=60,
+                json={"model": model, "messages": messages}, timeout=timeout,
             )
             if response.status_code in FALLBACK_STATUSES:
                 failures.append({"model": model, "status": response.status_code,
