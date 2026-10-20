@@ -36,6 +36,14 @@ def pg(monkeypatch):
 
     yield session
 
+    # Re-pin the schema before connecting. This fixture shares one function-scoped
+    # monkeypatch with the test, and finalizers run before monkeypatch undoes the
+    # environment -- so a test that deliberately leaves DB_SCHEMA invalid (which is
+    # the whole point of the refusal tests) would otherwise make schema_name() raise
+    # in here, turning a passing test into a teardown error and leaking the schema.
+    monkeypatch.setenv("DB_SCHEMA", SCHEMA)
+    monkeypatch.delenv("DB_ALLOW_PUBLIC_SCHEMA", raising=False)
+
     with session.get_db_connection() as conn:
         conn.execute(f'DROP SCHEMA IF EXISTS "{SCHEMA}" CASCADE')
         conn.commit()
