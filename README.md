@@ -18,9 +18,10 @@ command run, and the only stack that serves Telegram.
 - `app/db/session.py` - SQLite by default, Postgres when `DATABASE_URL` is set.
 - `telegram_client.py` - Telegram Bot API helper and the 4,096-character splitter.
 
-`app.py`, `routes/` and `services/` are an earlier scaffold that builds a *separate* Flask
-app and is not what runs in production. Editing them has no effect on the bot -- note that
-`services/` and `app/services/` are different packages.
+`app.py`, `routes/`, `services/`, `utils/` and `openrouter_client.py` are an earlier
+scaffold that builds a *separate* Flask app and is not what runs in production. Editing
+them has no effect on the bot -- note that `services/` and `app/services/` are different
+packages. They are dead weight and the next thing worth deleting.
 
 ## Local run
 
@@ -82,14 +83,21 @@ curl "https://<your-host>/health?token=<HEALTH_TOKEN>&probe=model"
 
 ## Agent model (Hermes)
 
-The live system prompt lives in `app/agent/prompt.py`. The agent uses Llama 3.1 70B as its
-primary OpenRouter model (which may incur charges), then falls back to free models. It
-replies in whichever language the user wrote in (Bengali in -> Bengali out, English in ->
-English out).
+Hermes is a general-purpose assistant and second brain for the team that runs it: it
+reasons over whatever is in the message, reads images and explicitly linked pages, recalls
+saved facts, and drafts, reviews, analyses and writes code. It replies in whichever
+language the user wrote in (Bengali in -> Bengali out, English in -> English out). The live
+system prompt is `app/agent/prompt.py`.
 
-Model fallback chain, tried in order:
+**Llama 3.1 70B always answers first.** `PRIMARY_MODEL` in `app/services/models.py` is
+pinned at the head of the chain and no environment variable can displace it, so the paid
+model always gets the first attempt and a stale dashboard value cannot quietly demote it
+behind a free one. It is paid, so **it may incur charges on every message** -- that is the
+deliberate trade for the best model answering first.
 
-1. `meta-llama/llama-3.1-70b-instruct` - primary; may incur charges
+Chain, tried in order:
+
+1. `meta-llama/llama-3.1-70b-instruct` - primary, always first; paid, may incur charges
 2. `nvidia/nemotron-3-ultra-550b-a55b:free`
 3. `nvidia/nemotron-3-super-120b-a12b:free`
 4. `google/gemma-4-31b-it:free`
@@ -102,10 +110,15 @@ stay accurate when these environment variables change.
 
 Configuration:
 
-- `OPENROUTER_MODELS` - comma-separated chain. Overrides the default chain; include paid
-  models only when you intend to allow their charges.
-- `OPENROUTER_MODEL` - single primary prepended to the default chain. **Ignored unless it is
-  a `:free` model**, so a stale paid value cannot override the configured primary.
+- `OPENROUTER_MODELS` - comma-separated **fallback** list, replacing the defaults. The
+  primary is prepended regardless and deduplicated out of this list, so it cannot be
+  dropped or reordered. A value that parses to nothing keeps the default fallbacks rather
+  than leaving the primary with none. Include paid models here only when you intend to
+  allow their charges.
+- `OPENROUTER_MODEL` - adds one free model as the **first fallback**, after the primary.
+  It used to set the primary; the primary is no longer something the environment decides.
+  **Ignored unless it is a `:free` model**, so an unreviewed paid model cannot join the
+  chain by accident.
 - `OPENROUTER_TIMEOUT` - per-attempt timeout in seconds (default 25).
 - `OPENROUTER_BUDGET` - ceiling in seconds for the *whole* chain (default 45). The
   chain stops early rather than spending `OPENROUTER_TIMEOUT` on every model: four
@@ -137,7 +150,7 @@ Supabase-specific here.
 **This app never shares a schema with anything else.** Its table names - `leads`, `tasks`,
 `reports`, `memories` - are exactly what a business product would also use, so every table
 lives in `DB_SCHEMA` (default `tri_buddy`) and `search_path` is pinned to it on each
-connection. Pointing `DATABASE_URL` at a database that also holds the Babosayee product
+connection. Pointing `DATABASE_URL` at a database that also holds another product
 is therefore safe: nothing unqualified can reach another schema's tables.
 
 Using `public` is refused outright unless `DB_ALLOW_PUBLIC_SCHEMA=1`, and the schema name

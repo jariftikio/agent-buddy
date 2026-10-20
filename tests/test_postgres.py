@@ -107,8 +107,8 @@ def test_memory_upsert_replaces(pg):
 
     memory = MemoryService()
     memory.remember("website", "old.example")
-    memory.remember("website", "https://babosayee.shop")
-    assert memory.recall("website") == "https://babosayee.shop"
+    memory.remember("website", "https://example.com")
+    assert memory.recall("website") == "https://example.com"
     assert len([m for m in memory.search("") if m["key"] == "website"]) == 1
 
 

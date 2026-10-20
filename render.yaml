@@ -18,8 +18,10 @@ services:
         value: 5
       - key: OPENROUTER_API_KEY
         sync: false
+      # Fallbacks only. meta-llama/llama-3.1-70b-instruct is pinned as the primary
+      # in app/services/models.py and always answers first, so it is not listed here.
       - key: OPENROUTER_MODELS
-        value: meta-llama/llama-3.1-70b-instruct,nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free
+        value: nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free
       - key: OPENROUTER_TIMEOUT
         value: 25
       - key: OPENROUTER_BUDGET

@@ -62,7 +62,7 @@ def describe(
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
         "HTTP-Referer": os.getenv("APP_URL", "https://onrender.com"),
-        "X-Title": "Babosayee Super Intelligent",
+        "X-Title": "Hermes",
         "Content-Type": "application/json",
     }
     base_url = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1").rstrip("/")

@@ -7,8 +7,8 @@ import app.tools.web as web
 # --- URL extraction -------------------------------------------------------------
 
 def test_finds_urls_and_strips_trailing_punctuation():
-    urls = web.find_urls("see https://babosayee.shop, and http://x.test/a?b=1.")
-    assert urls == ["https://babosayee.shop", "http://x.test/a?b=1"]
+    urls = web.find_urls("see https://example.com, and http://x.test/a?b=1.")
+    assert urls == ["https://example.com", "http://x.test/a?b=1"]
 
 
 def test_deduplicates_urls():

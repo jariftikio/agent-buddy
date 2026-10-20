@@ -85,7 +85,7 @@ def test_blank_entries_are_skipped():
 
 
 def test_build_prompt_still_works_with_no_argument():
-    assert "ব্যবসায়ী সুপার ইন্টেলিজেন্ট" in build_prompt()
+    assert "You are HERMES" in build_prompt()
 
 
 # --- capability honesty ---------------------------------------------------------
@@ -93,16 +93,16 @@ def test_build_prompt_still_works_with_no_argument():
 def test_prompt_forbids_inventing_metrics():
     prompt = build_prompt()
     assert "no search engine" in prompt
-    assert "Never invent, estimate, assume or hallucinate any metric" in prompt
+    assert "Never invent, estimate, assume or hallucinate a quantitative fact" in prompt
     assert "Reading one linked page is not research" in prompt
 
 
 def test_prompt_states_what_it_can_actually_see():
     """The prompt must not claim to be blind now that it can read images and links."""
     prompt = build_prompt()
-    assert "Images sent to you" in prompt
-    assert "Web pages linked in the message" in prompt
-    assert "cannot search, browse or follow" in prompt
+    assert "Read images sent to you" in prompt
+    assert "Read web pages linked in the message" in prompt
+    assert "cannot search, browse, or follow links" in prompt
 
 
 def test_fetched_content_is_data_not_instructions():
@@ -131,16 +131,17 @@ def test_prompt_requires_separating_fact_from_interpretation():
 
 def test_prompt_forbids_inventing_product_facts():
     prompt = build_prompt()
-    assert "NEVER INVENT PRODUCT FACTS" in prompt
+    assert "Do not invent product details" in prompt
     assert "[FEATURES]" in prompt
     assert "Bangladesh uses VAT, not GST" in prompt
 
 
-def test_prompt_covers_the_second_brain_jobs():
+def test_prompt_states_its_general_capabilities():
+    """Hermes is a general assistant, so the prompt states what it can actually do."""
     prompt = build_prompt()
-    for job in ("lead generation", "social media and branding", "PR review",
-                "interpreting analytics", "customer support"):
-        assert job in prompt
+    for capability in ("Reason over whatever is in the message", "Recall durable facts",
+                       "write and debug code", "Produce the finished artifact"):
+        assert capability in prompt
 
 
 def test_prompt_is_internal_facing_not_merchant_facing():
@@ -211,8 +212,8 @@ def orchestrator(fresh_db):
 @pytest.mark.parametrize(
     "message,key,value",
     [
-        ("Remember that my website is https://babosayee.shop", "website", "https://babosayee.shop"),
-        ("Remember that my website is: https://babosayee.shop", "website", "https://babosayee.shop"),
+        ("Remember that my website is https://example.com", "website", "https://example.com"),
+        ("Remember that my website is: https://example.com", "website", "https://example.com"),
         ("Remember that my core features are: billing, stock", "core features", "billing, stock"),
         ("Remember that my packages are Dokan 299 / Babsha 699", "packages", "Dokan 299 / Babsha 699"),
         ("Remember that my launch date is October 20", "launch date", "October 20"),
@@ -257,5 +258,5 @@ def test_memory_block_is_bounded(orchestrator):
 
     facts = [{"key": f"k{i}", "value": "x" * 1500} for i in range(40)]
     prompt = build_prompt(facts)
-    block = prompt.split("WHAT YOU KNOW ABOUT THE BUSINESS")[1]
+    block = prompt.split("WHAT YOU KNOW")[1]
     assert len(block) < MAX_MEMORY_BLOCK_CHARS + 2000

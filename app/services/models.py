@@ -7,17 +7,23 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Llama 3.1 70B is the primary model. It may incur OpenRouter charges; the remaining
-# models are free-tier fallbacks.
+# Llama 3.1 70B always answers first. It is paid, so it may incur OpenRouter charges
+# on every message -- that is the deliberate trade for the best model answering before
+# any free one gets a turn. Nothing in the environment can displace it; see
+# get_model_chain().
+PRIMARY_MODEL = "meta-llama/llama-3.1-70b-instruct"
+
+# Tried in order, only after the primary fails or is unavailable. All free.
 # thinkingmachines/inkling:free is deliberately absent: OpenRouter gates it behind
 # "agentic harnesses" and returns a permanent 403 to a plain webhook like this one,
 # so including it would only add a wasted round-trip to every fallback.
-DEFAULT_MODEL_CHAIN: List[str] = [
-    "meta-llama/llama-3.1-70b-instruct",
+DEFAULT_FALLBACK_CHAIN: List[str] = [
     "nvidia/nemotron-3-ultra-550b-a55b:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
     "google/gemma-4-31b-it:free",
 ]
+
+DEFAULT_MODEL_CHAIN: List[str] = [PRIMARY_MODEL, *DEFAULT_FALLBACK_CHAIN]
 
 # Statuses that mean "this model is unavailable right now, try the next one"
 # rather than "the request itself is malformed".
@@ -62,30 +68,38 @@ def is_free(model: str) -> bool:
 
 
 def get_model_chain() -> List[str]:
-    """Resolve the model chain from env, falling back to the free defaults.
+    """Resolve the model chain. PRIMARY_MODEL is always first.
 
-    OPENROUTER_MODELS is taken as given -- it is the explicit escape hatch for
-    anyone who deliberately wants to override the configured model chain.
-    OPENROUTER_MODEL is only honoured as an additional primary when it is free;
-    paid model selection is explicit in DEFAULT_MODEL_CHAIN or OPENROUTER_MODELS.
+    The environment configures the *fallbacks*, never the primary. Llama 3.1 70B is
+    pinned at the head and deduplicated out of the rest, so no configuration -- and
+    no stale value left in a dashboard -- can quietly demote it behind a free model
+    and leave the best model answering second.
+
+    OPENROUTER_MODELS replaces the fallback list wholesale. OPENROUTER_MODEL adds a
+    single free model as the *first* fallback; it used to be the primary, which is no
+    longer something the environment decides. A paid value there is still ignored,
+    because an unreviewed paid model should not join the chain by accident.
     """
     configured = os.getenv("OPENROUTER_MODELS", "").strip()
-    if configured:
-        chain = [model.strip() for model in configured.split(",") if model.strip()]
-        if chain:
-            return chain
+    parsed = [model.strip() for model in configured.split(",") if model.strip()]
+    if parsed:
+        rest = parsed
+    else:
+        # Either unset, or set to something that parses to nothing (a stray comma). A
+        # misconfigured value should not strip the primary of every fallback.
+        rest = list(DEFAULT_FALLBACK_CHAIN)
+        extra = os.getenv("OPENROUTER_MODEL", "").strip()
+        if extra and extra != PRIMARY_MODEL and extra not in rest:
+            if is_free(extra):
+                rest = [extra, *rest]
+            else:
+                logger.warning(
+                    "Ignoring paid OPENROUTER_MODEL=%s; paid models must be listed "
+                    "explicitly in OPENROUTER_MODELS.",
+                    extra,
+                )
 
-    primary = os.getenv("OPENROUTER_MODEL", "").strip()
-    if primary and primary not in DEFAULT_MODEL_CHAIN:
-        if is_free(primary):
-            return [primary, *DEFAULT_MODEL_CHAIN]
-        logger.warning(
-            "Ignoring paid OPENROUTER_MODEL=%s; paid model overrides must be set "
-            "explicitly in OPENROUTER_MODELS.",
-            primary,
-        )
-
-    return list(DEFAULT_MODEL_CHAIN)
+    return [PRIMARY_MODEL, *[model for model in rest if model != PRIMARY_MODEL]]
 
 
 def _base_url() -> str:
@@ -123,7 +137,7 @@ def complete(system_prompt: str, user_prompt: str) -> Dict[str, Any]:
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
         "HTTP-Referer": os.getenv("APP_URL", "https://onrender.com"),
-        "X-Title": "Babosayee Super Intelligent",
+        "X-Title": "Hermes",
         "Content-Type": "application/json",
     }
     messages = [

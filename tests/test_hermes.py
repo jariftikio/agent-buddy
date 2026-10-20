@@ -36,15 +36,40 @@ def test_paid_primary_is_ignored(monkeypatch):
     assert models.get_model_chain() == models.DEFAULT_MODEL_CHAIN
 
 
-def test_free_primary_is_prepended(monkeypatch):
+def test_free_extra_becomes_the_first_fallback_not_the_primary(monkeypatch):
+    """OPENROUTER_MODEL used to displace the primary. Llama must still answer first."""
     monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
     monkeypatch.setenv("OPENROUTER_MODEL", "some/model:free")
-    assert models.get_model_chain()[0] == "some/model:free"
+
+    chain = models.get_model_chain()
+
+    assert chain[0] == models.PRIMARY_MODEL
+    assert chain[1] == "some/model:free"
 
 
-def test_explicit_models_env_wins(monkeypatch):
+def test_explicit_models_env_configures_fallbacks_only(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODELS", "one/a:free, two/b:free")
-    assert models.get_model_chain() == ["one/a:free", "two/b:free"]
+    assert models.get_model_chain() == [models.PRIMARY_MODEL, "one/a:free", "two/b:free"]
+
+
+def test_primary_is_never_demoted_by_configuration(monkeypatch):
+    """A chain that lists the primary late must still try it first, exactly once."""
+    monkeypatch.setenv(
+        "OPENROUTER_MODELS", f"one/a:free,{models.PRIMARY_MODEL},two/b:free"
+    )
+
+    chain = models.get_model_chain()
+
+    assert chain[0] == models.PRIMARY_MODEL
+    assert chain.count(models.PRIMARY_MODEL) == 1
+    assert chain == [models.PRIMARY_MODEL, "one/a:free", "two/b:free"]
+
+
+def test_a_malformed_models_env_keeps_the_default_fallbacks(monkeypatch):
+    """A stray comma must not leave the primary with nothing to fall back to."""
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setenv("OPENROUTER_MODELS", "  ,  ")
+    assert models.get_model_chain() == models.DEFAULT_MODEL_CHAIN
 
 
 def test_falls_back_past_rate_limited_model(monkeypatch):
@@ -204,32 +229,48 @@ def test_webhook_reports_telegram_api_rejection(monkeypatch):
     assert response.get_json()["status"] == "dispatch_error"
 
 
-def test_prompt_states_language_matching_and_llama_primary():
+def test_prompt_states_language_matching_and_llama_answering_first():
     prompt = build_prompt()
-    assert "ব্যবসায়ী সুপার ইন্টেলিজেন্ট" in prompt
+
+    assert "HERMES" in prompt
     assert "Bengali in, Bengali out" in prompt
-    assert "Primary: meta-llama/llama-3.1-70b-instruct." in prompt
-    assert "You run on the OpenRouter models configured for this deployment." in prompt
+    assert f"{models.PRIMARY_MODEL} answers first on every message." in prompt
+    assert "no environment setting can demote it" in prompt
     for model in models.DEFAULT_MODEL_CHAIN:
         assert model in prompt
 
 
-def test_prompt_uses_the_configured_free_model_chain(monkeypatch):
+def test_prompt_carries_no_babosayee_branding():
+    """Hermes is a general assistant now; the old product framing must be gone."""
+    prompt = build_prompt([{"key": "website", "value": "https://example.com"}])
+
+    for term in ("Babosayee", "babosayee", "ব্যবসায়ী সুপার ইন্টেলিজেন্ট"):
+        assert term not in prompt
+
+
+def test_prompt_lists_configured_fallbacks_after_the_primary(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODELS", "one/a:free,two/b:free")
     prompt = build_prompt()
 
-    assert "Primary: one/a:free. Fallbacks, in order: two/b:free." in prompt
-    assert "You run exclusively on free OpenRouter models." in prompt
+    assert f"{models.PRIMARY_MODEL} answers first on every message." in prompt
+    assert "these are tried in order: one/a:free, two/b:free." in prompt
+    assert "Every fallback is a free model." in prompt
     assert "nvidia/nemotron-3-ultra-550b-a55b:free" not in prompt
 
 
-def test_prompt_does_not_claim_an_explicit_paid_chain_is_free(monkeypatch):
+def test_prompt_admits_the_primary_is_paid():
+    prompt = build_prompt()
+
+    assert "The primary is a paid model and may incur charges" in prompt
+    assert "you run only on free models" in prompt
+
+
+def test_prompt_does_not_claim_a_paid_fallback_is_free(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODELS", "vendor/model")
     prompt = build_prompt()
 
-    assert "Primary: vendor/model." in prompt
-    assert "You run on the OpenRouter models configured for this deployment." in prompt
-    assert "You run exclusively on free OpenRouter models." not in prompt
+    assert "these are tried in order: vendor/model." in prompt
+    assert "Every fallback is a free model." not in prompt
 
 
 def test_hermes_prompt_supports_kali_environment_context():

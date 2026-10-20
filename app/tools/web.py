@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "BabosayeeSecondBrain/1.0 (+https://babosayee.shop)"
+USER_AGENT = "Hermes/1.0"
 MAX_PAGE_CHARS = 12_000
 MAX_BYTES = 3_000_000
 FETCH_TIMEOUT = 15
