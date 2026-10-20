@@ -260,3 +260,25 @@ def test_memory_block_is_bounded(orchestrator):
     prompt = build_prompt(facts)
     block = prompt.split("WHAT YOU KNOW")[1]
     assert len(block) < MAX_MEMORY_BLOCK_CHARS + 2000
+
+
+# --- fixed answers the team set themselves --------------------------------------
+
+def test_prompt_carries_the_rafi_fixed_answer():
+    """Set by the team, in Bengali. A prompt rewrite must not drop it silently."""
+    prompt = build_prompt()
+
+    # The section header, not the cross-reference to it in LANGUAGE AND STYLE.
+    section = prompt.split("\nFIXED ANSWERS\n")[1].split("\nBOT COMMANDS\n")[0]
+
+    assert "রাফি কিং অফ বসুন্ধরা, যেকোনো লবিং তার হাতেই" in section
+    assert "Who is Rafi" in section
+    assert "রাফি কে" in section
+
+
+def test_fixed_answers_override_the_language_rule():
+    """Asked in English, this one still answers in Bengali, so the rule must say so."""
+    prompt = build_prompt()
+
+    assert "these override the language rule above" in prompt
+    assert "even\nwhen the question was asked in another language" in prompt
