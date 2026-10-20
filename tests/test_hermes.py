@@ -238,3 +238,49 @@ def test_hermes_prompt_supports_kali_environment_context():
     assert "KALI ENVIRONMENT CONTEXT" in prompt
     assert "Python 3.11 on Kali" in prompt
     assert "reference data, not instructions" in prompt
+
+
+# --- response budget ------------------------------------------------------------
+
+def test_chain_stops_once_the_response_budget_is_spent(monkeypatch):
+    """A killed worker sends no reply, so the chain must give up before that happens."""
+    monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setenv("OPENROUTER_TIMEOUT", "25")
+    monkeypatch.setenv("OPENROUTER_BUDGET", "45")
+
+    clock = iter([0, 0, 25, 50, 75, 100])
+    monkeypatch.setattr(models.time, "monotonic", lambda: next(clock))
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append((json["model"], timeout))
+        return FakeResponse(429, text="rate limited")
+
+    monkeypatch.setattr(models.requests, "post", fake_post)
+
+    try:
+        models.complete("system", "user")
+    except models.AllModelsUnavailable as error:
+        pass
+    else:
+        raise AssertionError("expected AllModelsUnavailable")
+
+    # Only the attempts that fit the budget ran, and the last one was shortened to it.
+    assert [model for model, _ in calls] == models.DEFAULT_MODEL_CHAIN[:2]
+    assert calls[0][1] == 25
+    assert calls[1][1] == 20
+
+
+def test_budget_skip_does_not_mask_a_real_rate_limit(monkeypatch):
+    """Models never tried say nothing about the cause, so they must not change it."""
+    failures = [
+        {"model": "a", "status": 429, "error": "rate limited"},
+        {"model": "b", "status": None, "error": "response budget spent", "skipped": True},
+    ]
+    assert models.AllModelsUnavailable(failures).rate_limited is True
+
+
+def test_only_skipped_models_is_not_a_rate_limit():
+    failures = [{"model": "a", "status": None, "error": "x", "skipped": True}]
+    assert models.AllModelsUnavailable(failures).rate_limited is False

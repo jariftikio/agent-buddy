@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from typing import Any, Dict, List
 
 import requests
@@ -14,13 +15,23 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_CHAIN: List[str] = [
     "meta-llama/llama-3.1-70b-instruct",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "qwen/qwen3.8-27b:free",
-    "apodex/apodex-1.1-mini:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemma-4-31b-it:free",
 ]
 
 # Statuses that mean "this model is unavailable right now, try the next one"
 # rather than "the request itself is malformed".
 FALLBACK_STATUSES = {402, 403, 408, 429, 500, 502, 503, 504}
+
+# Seconds the whole chain may spend before it has to give up and let the caller
+# answer. Walking four models at OPENROUTER_TIMEOUT each outlasts both the
+# gunicorn worker timeout and Telegram's wait for the webhook, and a killed
+# worker sends no reply at all -- so a partial answer beats an exhausted one.
+DEFAULT_BUDGET = 45
+
+# A remaining slice shorter than this cannot complete a model call, so spending
+# it only delays the fallback reply.
+MIN_ATTEMPT_SECONDS = 5
 
 
 class AllModelsUnavailable(RuntimeError):
@@ -33,7 +44,16 @@ class AllModelsUnavailable(RuntimeError):
 
     @property
     def rate_limited(self) -> bool:
-        return all(item.get("status") in {402, 429} for item in self.failures)
+        """True when every model that was actually tried was rate limited or out of credit.
+
+        Models skipped because the response budget ran out say nothing about why the
+        chain failed, so counting them would hide a genuine rate limit behind the
+        vaguer fallback reply.
+        """
+        attempted = [item for item in self.failures if not item.get("skipped")]
+        if not attempted:
+            return False
+        return all(item.get("status") in {402, 429} for item in attempted)
 
 
 def is_free(model: str) -> bool:
@@ -79,6 +99,21 @@ def _timeout() -> int:
         return 25
 
 
+def budget(default: int = DEFAULT_BUDGET) -> int:
+    try:
+        return max(MIN_ATTEMPT_SECONDS, int(os.getenv("OPENROUTER_BUDGET", str(default))))
+    except ValueError:
+        return default
+
+
+def attempt_timeout(deadline: float, per_model: int) -> float:
+    """Seconds this attempt may take, or 0 when the budget is spent."""
+    remaining = deadline - time.monotonic()
+    if remaining < MIN_ATTEMPT_SECONDS:
+        return 0.0
+    return min(float(per_model), remaining)
+
+
 def complete(system_prompt: str, user_prompt: str) -> Dict[str, Any]:
     """Call each model in the chain until one answers.
 
@@ -97,14 +132,31 @@ def complete(system_prompt: str, user_prompt: str) -> Dict[str, Any]:
     ]
 
     failures: List[Dict[str, Any]] = []
+    deadline = time.monotonic() + budget()
+    per_model = _timeout()
 
     for model in get_model_chain():
+        timeout = attempt_timeout(deadline, per_model)
+        if not timeout:
+            logger.warning(
+                "Response budget spent, not trying remaining models | last=%s", model
+            )
+            failures.append(
+                {
+                    "model": model,
+                    "status": None,
+                    "error": "response budget spent",
+                    "skipped": True,
+                }
+            )
+            break
+
         try:
             response = requests.post(
                 f"{_base_url()}/chat/completions",
                 headers=headers,
                 json={"model": model, "messages": messages},
-                timeout=_timeout(),
+                timeout=timeout,
             )
 
             if response.status_code in FALLBACK_STATUSES:
