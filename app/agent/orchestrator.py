@@ -6,6 +6,8 @@ from app.services.memory import MemoryService
 from app.tools.approvals import ApprovalService
 from app.tools.email_drafts import draft_proposal_email
 from app.tools.leads import add_lead
+from app.tools.prospect import generate_lead
+from app.tools.web import find_urls
 
 # "is" / "are", with or without a trailing colon. The key stays on one line; the value may
 # run over several, so a pasted list survives intact.
@@ -19,6 +21,12 @@ REMEMBER_PATTERN = re.compile(
     flags=re.IGNORECASE | re.DOTALL,
 )
 
+# "Find leads: <url>", and the phrasings people actually type for it.
+FIND_LEADS_PATTERN = re.compile(
+    r"\s*(?:find|get|generate|scan)\s+leads?\b\s*:?\s*",
+    flags=re.IGNORECASE,
+)
+
 
 class AgentOrchestrator:
     def __init__(self) -> None:
@@ -28,6 +36,10 @@ class AgentOrchestrator:
 
     def handle_message(self, message: str) -> Dict[str, Any]:
         lowered = message.lower().strip()
+
+        # Checked before "add lead" so "Find leads: <url>" is not swallowed by it.
+        if FIND_LEADS_PATTERN.match(message):
+            return self._find_leads(message)
 
         if lowered.startswith("add lead"):
             match = re.match(r"add lead:\s*(.+)", message, flags=re.IGNORECASE)
@@ -74,3 +86,56 @@ class AgentOrchestrator:
             return {"ok": True, "handled": False, "message": "হ্যালো! আমি ট্রাই বাডি ওএস 🚀"}
 
         return {"ok": True, "handled": False, "message": f"আমি পেয়েছি: {message}"}
+
+    def _find_leads(self, message: str) -> Dict[str, Any]:
+        """Crawl a linked site for contact details and save a lead for it."""
+        urls = find_urls(message)
+        if not urls:
+            return {
+                "ok": False,
+                "handled": True,
+                "message": (
+                    "একটি লিঙ্ক দিন। যেমন: Find leads: https://example.com\n\n"
+                    "Send a link to scan, for example: Find leads: https://example.com"
+                ),
+            }
+
+        result = generate_lead(urls[0])
+
+        if not result["ok"]:
+            return {
+                "ok": False,
+                "handled": True,
+                "message": (
+                    f"সাইটটি পড়া যায়নি: {result.get('reason')}\n\n"
+                    f"Could not read that site: {result.get('reason')}"
+                ),
+            }
+
+        emails = result["emails"]
+        phones = result["phones"]
+        lines = [
+            f"🔍 {result['host']} — {len(result['pages'])} পেজ পড়া হয়েছে / pages read",
+            f"📧 {len(emails)} email, 📞 {len(phones)} phone",
+        ]
+        if emails:
+            lines.append("Emails: " + ", ".join(emails[:10]))
+        if phones:
+            lines.append("Phones: " + ", ".join(phones[:10]))
+
+        if result["saved"]:
+            lead = result["lead"]
+            lines.append(f"✅ লিড যোগ করা হয়েছে / lead saved: {lead['lead_ref']} — {lead['name']}")
+        else:
+            lines.append(f"ℹ️ সেভ করা হয়নি / not saved: {result.get('reason')}")
+
+        # Said once, every time, because the bot cannot know whether these addresses
+        # consented to be contacted -- and the team is about to mail them.
+        if emails or phones:
+            lines.append(
+                "⚠️ এগুলো পাবলিক পেজ থেকে নেওয়া; যোগাযোগের আগে সম্মতি ও আইন দেখে নিন।\n"
+                "Collected from public pages. Check consent and local marketing law "
+                "before contacting."
+            )
+
+        return {"ok": True, "handled": True, "message": "\n".join(lines), "result": result}

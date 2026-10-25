@@ -130,6 +130,7 @@ Known commands are matched *before* the model runs, so they actually write to th
 
 ```
 Add lead: <details>
+Find leads: <url>
 Remember that my <thing> is <value>
 What do you know
 Draft a proposal email for <client>   ->  then: Approve <id>
@@ -137,9 +138,52 @@ Draft a proposal email for <client>   ->  then: Approve <id>
 
 Anything else goes to Hermes.
 
-Task assignment, team reports, Slack messaging, automatic lead capture, and pull-request
-reviews are not enabled in this release. Leads can still be added explicitly with
-`Add lead: <details>`.
+Task assignment, team reports, Slack messaging, automatic lead capture from chat, and
+pull-request reviews are not enabled in this release.
+
+## Lead generation from a link
+
+`Find leads: <url>` crawls that one site for the contact details it publishes and saves
+a lead for it. `find`, `get`, `generate` and `scan` all work, with or without a colon.
+
+"Deep search" means a few of the site's **own** contact-looking pages -- `/contact`,
+`/about`, `/team`, `/support` and similar -- not a search of the web. The bot has no
+search engine, so it cannot find a company from its name: it needs the URL.
+
+What it collects, per site:
+
+- **Emails** from the page text *and* from `mailto:` links. The links matter on their
+  own: a link labelled "Email us" keeps the address only in the `href`, and the model
+  path throws attributes away.
+- **Phone numbers** from `tel:` links, kept as given so international numbers survive,
+  plus Bangladeshi mobile numbers found in the text. Free text is matched only against
+  the BD pattern on purpose -- a general international regex over page text returns
+  prices, dates and order numbers far more often than phone numbers.
+
+Image sprites (`logo@2x.png`) and placeholder domains (`example.com`) are filtered out,
+and `app/tools/prospect.py` can tell a role account (`info@`, `sales@`) from what looks
+like a personal mailbox.
+
+**One lead per site, not one per address.** A site is one business, and the `leads` row
+has a single phone column; every address and number found goes into the lead's notes, so
+nothing discovered is lost. Scoring uses the same arithmetic rubric as every other lead,
+and a site already stored is not saved twice.
+
+Bounds, all of them deliberate:
+
+- Same host only. A link to another domain is never followed.
+- `robots.txt` is honoured, and is read through the same SSRF-guarded fetch rather than
+  `RobotFileParser.read()`, which would open its own unguarded connection.
+- `MAX_PAGES` (6) pages, under a shared `CRAWL_BUDGET` (25s), with `MAX_CONTACTS` (25)
+  per run so one page of `mailto:` links cannot flood the table.
+- Every fetch goes through `app/tools/web.py`, so the SSRF guard applies to crawled
+  links too -- a page that links to `169.254.169.254` does not get it fetched. Redirects
+  are re-checked against the guard as well, since a redirect can land somewhere the
+  original URL would not have.
+
+The reply always ends with a reminder to check consent and local marketing law. The bot
+has no way to know whether a published address agreed to be contacted, and the team is
+usually about to mail it.
 
 ## Storage
 
