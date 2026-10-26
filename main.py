@@ -25,7 +25,7 @@ from typing import Optional
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from hermes_modules.agent_core import (
+from hermes_modules.agent_core_v2 import (
     HermesAgent,
     create_hermes_agent_with_modules,
     TaskType,
@@ -45,10 +45,11 @@ class HermesUI:
     BANNER = """
     ╔═══════════════════════════════════════════════════════════════╗
     ║                                                               ║
-    ║                    🔮 HERMES AGENT v0.1                      ║
+    ║                    🔮 HERMES AGENT v2.0                      ║
     ║           Intelligent Local Automation & Monitoring           ║
     ║                                                               ║
-    ║  Capabilities: Web Search • System Monitoring • Diagnostics  ║
+    ║  Capabilities: Web Search • System Monitoring • URL Security ║
+    ║  Enhanced: LLM-Based Intent Classification • Risk Assessment ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
     """
@@ -71,6 +72,11 @@ class HermesUI:
     │  Port Checking:                                            │
     │    • "Is port 8080 listening?"                             │
     │    • "Check port 3000"                                     │
+    │                                                              │
+    │  URL Security:                                             │
+    │    • "Is https://example.com safe?"                        │
+    │    • "Check if this URL is malicious: https://site.com"    │
+    │    • "Verify domain https://phishing-attempt.com"          │
     │                                                              │
     │  Combined:                                                  │
     │    • "Check system and search for optimization tips"       │
