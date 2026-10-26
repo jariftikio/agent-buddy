@@ -139,7 +139,6 @@ class KeywordBasedIntentClassifier(IntentClassifierBase):
         "link",
         "domain",
         "website",
-        "check",
         "safe",
         "phishing",
         "malicious",
@@ -180,6 +179,14 @@ class KeywordBasedIntentClassifier(IntentClassifierBase):
                 if port_num
                 else []
             )
+        elif "health" in lower_input or "report" in lower_input:
+            task_type = TaskType.HEALTH_REPORT
+            primary_query = "Generate system health report"
+            entities = []
+        elif has_monitor:
+            task_type = TaskType.SYSTEM_MONITOR
+            primary_query = "Check CPU and memory usage"
+            entities = [ExtractedEntity("monitor_flag", True, 0.85)]
         elif has_url:
             task_type = TaskType.URL_CHECK
             url = self._extract_url(user_input)
@@ -189,14 +196,6 @@ class KeywordBasedIntentClassifier(IntentClassifierBase):
                 if url
                 else []
             )
-        elif "health" in lower_input or "report" in lower_input:
-            task_type = TaskType.HEALTH_REPORT
-            primary_query = "Generate system health report"
-            entities = []
-        elif has_monitor:
-            task_type = TaskType.SYSTEM_MONITOR
-            primary_query = "Check CPU and memory usage"
-            entities = [ExtractedEntity("monitor_flag", True, 0.85)]
         else:
             task_type = TaskType.UNKNOWN
             primary_query = user_input
