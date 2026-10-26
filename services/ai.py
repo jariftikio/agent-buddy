@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 import logging
 import time
+import asyncio
 from requests.exceptions import Timeout, ConnectionError
 
 from services.memory import ConversationMemory
@@ -10,6 +11,9 @@ from openrouter_client import OpenRouterClient
 from hermes_modules.language_config import LanguageDetector
 
 logger = logging.getLogger(__name__)
+
+# Async executor (optional, initialized if available)
+_async_executor = None
 
 
 class AIService:
@@ -97,3 +101,89 @@ class AIService:
         return "\n".join(
             f"{item['role']}: {item['content']}" for item in history[-8:]
         )
+
+    # ============ ASYNC LAYER 5 EXECUTION METHODS ============
+
+    def set_async_executor(self, executor: Any) -> None:
+        """Set async executor for non-blocking execution"""
+        global _async_executor
+        _async_executor = executor
+
+    async def generate_reply_async(
+        self,
+        message: str,
+        session_id: str = "default"
+    ) -> Dict[str, Any]:
+        """
+        Async wrapper for generate_reply.
+        Allows non-blocking execution in async contexts.
+
+        Args:
+            message: User input
+            session_id: Conversation session ID
+
+        Returns:
+            Response dict with async-safe structure
+        """
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Run synchronous generate_reply in executor
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    self.generate_reply,
+                    message,
+                    session_id,
+                ),
+                timeout=30.0,
+            )
+            return response
+        except asyncio.TimeoutError:
+            logger.warning(f"Async timeout for session {session_id}")
+            return {
+                "ok": False,
+                "response": "⏱️ অনুরোধটি সময়মত সম্পন্ন হয়নি। পরে আবার চেষ্টা করুন।",
+                "error": "timeout",
+            }
+        except Exception as e:
+            logger.error(f"Async execution error: {e}", exc_info=True)
+            return {
+                "ok": False,
+                "response": "❌ অপ্রত্যাশিত ত্রুটি ঘটেছে।",
+                "error": str(e),
+            }
+
+    async def execute_concurrent_handlers(
+        self,
+        message: str,
+        session_id: str = "default",
+    ) -> Dict[str, Any]:
+        """
+        Execute defensive handler and LLM concurrently when applicable.
+
+        Returns structured report with Bengali formatting.
+        """
+        if not _async_executor:
+            logger.warning("Async executor not initialized, using sync execution")
+            return self.generate_reply(message, session_id)
+
+        return await _async_executor.execute_concurrent_handlers(
+            message=message,
+            session_id=session_id,
+        )
+
+    def get_telemetry_summary(self) -> Dict[str, Any]:
+        """Get execution telemetry summary (must be called from async context)"""
+        if not _async_executor:
+            return {
+                "status": "async_not_initialized",
+                "message": "Async executor not available",
+            }
+
+        # For sync context, we'd need to run this differently
+        # This is a placeholder for the async version
+        return {
+            "status": "telemetry_available",
+            "executor": "async_hermes",
+        }
