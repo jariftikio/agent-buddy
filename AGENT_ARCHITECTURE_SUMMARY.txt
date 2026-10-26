@@ -1,0 +1,379 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                    HERMES AGENT ARCHITECTURE - COMPLETE SYSTEM                ║
+║                                                                                ║
+║                       Lead Software Architect Design                          ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 1. ARCHITECTURE OVERVIEW                                                     ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Natural Language Input
+        ↓
+   ┌─────────────────────────────────────────────────────────┐
+   │        INTENT CLASSIFICATION LAYER                      │
+   │  • Keyword matching & extraction                        │
+   │  • Task type inference                                  │
+   │  • Confidence scoring                                   │
+   │  • Parameter parsing                                    │
+   └──────────────┬──────────────────────────────────────────┘
+                  ↓
+   ┌─────────────────────────────────────────────────────────┐
+   │        AGENT ORCHESTRATION LAYER                        │
+   │  • Context management (state tracking)                  │
+   │  • Task routing (strategy pattern)                      │
+   │  • Error handling & recovery                            │
+   │  • Result accumulation                                  │
+   └──────────────┬──────────────────────────────────────────┘
+                  ↓
+        ┌─────────┴─────────┬──────────────┐
+        ↓                   ↓              ↓
+   ┌──────────┐      ┌─────────────┐  ┌─────────┐
+   │   WEB    │      │   SYSTEM    │  │  PORT   │
+   │  SEARCH  │      │  MONITORING │  │  CHECK  │
+   └──────────┘      └─────────────┘  └─────────┘
+        ↓                   ↓              ↓
+        └─────────┬─────────┴──────────────┘
+                  ↓
+   ┌─────────────────────────────────────────────────────────┐
+   │        RESULT FORMATTING LAYER                          │
+   │  • Data normalization                                   │
+   │  • JSON serialization                                   │
+   │  • Summary generation                                   │
+   └──────────────┬──────────────────────────────────────────┘
+                  ↓
+   ┌─────────────────────────────────────────────────────────┐
+   │        USER INTERFACE LAYER                             │
+   │  • Formatted output presentation                        │
+   │  • Interactive prompting                                │
+   │  • Command routing                                      │
+   └──────────────┬──────────────────────────────────────────┘
+                  ↓
+              Structured JSON Response
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 2. FILES CREATED                                                             ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Core Agent System:
+  ✓ main.py                           - Main execution loop with CLI interface
+  ✓ hermes_modules/agent_core.py      - Core agent orchestration
+  
+Supporting Modules:
+  ✓ hermes_modules/web_search.py      - Web search client (SerpApi/Tavily)
+  ✓ hermes_modules/system_monitor.py  - System monitoring (CPU, memory, ports)
+  ✓ hermes_modules/config.py          - Configuration & environment management
+  ✓ hermes_modules/__init__.py        - Package exports
+  
+Utilities:
+  ✓ hermes_modules/examples.py        - Usage examples
+  ✓ hermes_modules/requirements.txt   - Python dependencies
+  
+Documentation:
+  ✓ AGENT_ARCHITECTURE.md             - Technical design document
+  ✓ AGENT_INTEGRATION_GUIDE.md        - Integration & usage guide
+  ✓ HERMES_SETUP.md                   - Setup & configuration guide
+  ✓ hermes_modules/README.md          - API reference
+  
+Testing:
+  ✓ test_hermes_modules.py            - Test suite
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 3. KEY COMPONENTS                                                            ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+IntentClassifier
+  ├─ Keyword-based classification
+  ├─ Multi-task detection (combined requests)
+  ├─ Parameter extraction (queries, port numbers)
+  └─ Confidence scoring
+
+HermesAgent (Core Orchestrator)
+  ├─ Handler registry (Strategy pattern)
+  ├─ Task routing logic
+  ├─ Context management
+  ├─ Error recovery
+  └─ Result accumulation
+
+AgentContext (Execution State)
+  ├─ Session tracking
+  ├─ Intent storage
+  ├─ Result collection
+  └─ Metadata preservation
+
+TaskResult (Execution Output)
+  ├─ Success/failure status
+  ├─ Execution data
+  ├─ Error messages
+  ├─ Timing information
+  └─ Timestamp
+
+HermesExecutor (Orchestration)
+  ├─ Agent lifecycle management
+  ├─ Input processing
+  ├─ Response formatting
+  └─ Error handling
+
+HermesUI (User Interface)
+  ├─ Banner display
+  ├─ Formatted output
+  ├─ Interactive prompting
+  └─ Section rendering
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 4. TASK TYPE CLASSIFICATION                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+WEB_SEARCH
+  Keywords: search, find, look up, query, web, internet, trending
+  Example: "Search for Python tutorials"
+  Handler: WebSearchClient
+  Result: Title, URL, snippet
+
+SYSTEM_MONITOR
+  Keywords: cpu, memory, ram, usage, load, performance, health
+  Example: "Check CPU usage"
+  Handler: SystemMonitor.get_cpu_usage() + get_memory_usage()
+  Result: CPU %, cores, memory %, used/total GB
+
+HEALTH_REPORT
+  Keywords: health, report, diagnostics, status
+  Example: "Generate system health report"
+  Handler: SystemMonitor.get_system_health()
+  Result: CPU, memory, alerts, listening ports
+
+PORT_CHECK
+  Keywords: port, listening, connection, service
+  Example: "Is port 8080 listening?"
+  Handler: SystemMonitor.is_port_listening()
+  Result: Port number, listening status
+
+COMBINED
+  Triggers: Multiple keywords from different categories
+  Example: "Search for Docker and check system health"
+  Handler: Multiple handlers executed sequentially
+  Result: Web search + system monitoring combined
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 5. EXECUTION EXAMPLE                                                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Input:  "Search for Docker and check system status"
+         ↓
+Intent: COMBINED
+         ├─ WEB_SEARCH: "Docker"
+         └─ SYSTEM_MONITOR: CPU/memory metrics
+         ↓
+Session: session_1
+         ├─ Result 1: Web Search
+         │  ├─ Query: "Docker"
+         │  ├─ Results: 5 items
+         │  └─ Time: 125ms
+         │
+         └─ Result 2: System Monitor
+            ├─ CPU: 45.2%
+            ├─ Memory: 72.3%
+            └─ Time: 1200ms
+         ↓
+Summary: "✅ Web Search: Found 5 results | ✅ System Monitor: CPU 45.2% | Memory 72.3%"
+         ↓
+Output:  Formatted JSON + Pretty-printed results
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 6. DESIGN PATTERNS IMPLEMENTED                                               ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Strategy Pattern
+  → Different handlers per task type, registered at runtime
+  → Enables adding new task types without modifying core
+
+Context Pattern
+  → AgentContext maintains state through execution pipeline
+  → Enables passing data between components cleanly
+
+Factory Pattern
+  → create_hermes_agent_with_modules() pre-configures agent
+  → Simplified instantiation for common use case
+
+Builder Pattern (Implicit)
+  → AgentContext built step-by-step during agent flow
+  → Clean, readable construction of complex state
+
+Observer Pattern (Implicit)
+  → Task handlers "observe" and respond to task types
+  → Loose coupling between router and executors
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 7. EXTENSIBILITY                                                             ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Adding a New Task Type:
+
+  1. Add enum to TaskType:
+     class TaskType(Enum):
+         MY_NEW_TASK = "my_new_task"
+
+  2. Add keywords to IntentClassifier:
+     MY_KEYWORDS = {"keyword1", "keyword2"}
+     if any(kw in input for kw in MY_KEYWORDS):
+         task_type = TaskType.MY_NEW_TASK
+
+  3. Create handler function:
+     def handle_my_task(context, params):
+         # Do work
+         return TaskResult(...)
+
+  4. Register handler:
+     agent.register_handler(TaskType.MY_NEW_TASK, handle_my_task)
+
+That's it! No core code modification needed.
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 8. RUNNING THE SYSTEM                                                        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Interactive Mode:
+  $ python3 main.py
+  
+  🔮 Hermes > Search for Python best practices
+  🔮 Hermes > Check system health
+  🔮 Hermes > Is port 8080 listening?
+  🔮 Hermes > exit
+
+Library Mode:
+  from hermes_modules.agent_core import create_hermes_agent_with_modules
+  
+  agent, _ = create_hermes_agent_with_modules()
+  context = agent.process_input("Your query here")
+  
+  for result in context.results:
+      if result.success:
+          print(result.data)
+
+Direct API Access:
+  from hermes_modules import WebSearchClient, SystemMonitor
+  
+  # Use modules directly without agent routing
+  search = WebSearchClient()
+  results = search.search("query")
+  
+  monitor = SystemMonitor()
+  health = monitor.get_system_health()
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 9. DATA FLOW SUMMARY                                                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Input Processing:
+  Input String → IntentClassifier → Intent Object
+
+Intent Processing:
+  Intent → HermesAgent._execute_tasks() → Task Routing
+
+Task Execution:
+  Task Type → Handler Registry → Handler Function → TaskResult
+
+Result Collection:
+  TaskResult → AgentContext.add_result() → Results List
+
+Response Formation:
+  Results List → HermesExecutor._format_response() → Response Dict
+
+Output Generation:
+  Response Dict → HermesUI.display_response() → Formatted Output
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 10. PRODUCTION-READY FEATURES                                                ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+✓ Comprehensive error handling
+✓ Graceful degradation (fails gracefully, not catastrophically)
+✓ Structured logging throughout
+✓ Configurable via environment variables
+✓ Clean separation of concerns
+✓ Strategy pattern for extensibility
+✓ Type hints for IDE support
+✓ Docstrings on all public APIs
+✓ Execution timing measurements
+✓ JSON serializable output
+✓ Session tracking for audit trails
+✓ Confidence scoring for intent classification
+✓ Multi-task support (COMBINED type)
+✓ API key protection (never logged)
+✓ Timeout protection on external calls
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 11. TESTING                                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Run comprehensive tests:
+  $ python3 test_hermes_modules.py
+
+Results show:
+  ✓ Imports: All modules load correctly
+  ✓ SystemMonitor: CPU/memory monitoring works
+  ✓ Config: Environment setup validated
+  ✓ WebSearchClient: API integration ready
+  ✓ Error Handling: Exceptions caught properly
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 12. NEXT STEPS                                                               ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Immediate:
+  1. Configure API key in .env (optional)
+  2. Run: python3 main.py
+  3. Try natural language queries
+
+Short-term:
+  1. Review AGENT_ARCHITECTURE.md for design patterns
+  2. Explore AGENT_INTEGRATION_GUIDE.md for usage patterns
+  3. Add custom task handlers for your needs
+
+Long-term:
+  1. Implement async/parallel task execution
+  2. Add ML-based intent classification
+  3. Implement persistent storage & caching
+  4. Expose as REST/GraphQL API
+  5. Deploy to cloud infrastructure
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ CONCLUSION                                                                   ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+This architecture demonstrates professional-grade software design:
+
+✓ Clean Architecture: Clear layer separation
+✓ SOLID Principles: Single responsibility, Open/closed
+✓ Design Patterns: Strategy, Factory, Context, Builder
+✓ Extensibility: Easy to add new task types
+✓ Robustness: Comprehensive error handling
+✓ Scalability: Ready for async, distributed, ML enhancements
+✓ Maintainability: Well-documented, testable, clear patterns
+✓ Production-Ready: Logging, config, monitoring, error recovery
+
+The system successfully demonstrates how to build an intelligent agent that:
+  • Understands natural language intent
+  • Routes tasks intelligently
+  • Executes multiple modules
+  • Returns structured results
+  • Handles errors gracefully
+  • Scales to new capabilities
+
+Welcome to Hermes! 🔮
+

@@ -1,0 +1,477 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║            HERMES AGENT - DEFENSIVE SECURITY MODULE ARCHITECTURE              ║
+║                                                                                ║
+║                      URL Security Handler Integration (Layer 1)                ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 1. ARCHITECTURE INTEGRATION                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+5-LAYER HERMES ARCHITECTURE:
+
+  Layer 5: USER INTERFACE
+    └─ Formatting, display, prompting
+  
+  Layer 4: RESULT FORMATTING
+    └─ Data normalization, JSON output
+  
+  Layer 3: AGENT ORCHESTRATION
+    └─ Task routing, context management
+  
+  Layer 2: INTENT CLASSIFICATION
+    └─ LLM + Keyword (Two-tier intelligence)
+  
+  Layer 1: MODULES (Defensive)
+    ├─ WebSearchClient (Query external APIs)
+    ├─ SystemMonitor (Local diagnostics)
+    └─ URLSecurityHandler ← NEW (Defensive security)
+       ├─ Architectural Risk Assessment
+       ├─ Indicator Defanging
+       └─ Integration with CompositeIntentClassifier
+
+
+NEW TASKTYPE IN CLASSIFICATION LAYER:
+
+  TaskType.URL_CHECK
+    └─ Routes to URLSecurityHandler in Layer 1
+
+
+NEW DATA FLOW:
+
+  User Input: "Check if this link is safe: http://suspicious.com"
+        ↓
+  CompositeIntentClassifier (Layer 2)
+        ├─ LLM semantic understanding
+        └─ Detects: URL_CHECK intent
+        ↓
+  HermesAgent routing (Layer 3)
+        ↓
+  URLSecurityHandler.handle_url_check() (Layer 1)
+        ├─ URLSecurityAnalyzer.assess()
+        │  ├─ Check encoding (IDN, Punycode)
+        │  ├─ Check IP address (raw, private, loopback)
+        │  ├─ Check domain structure
+        │  ├─ Check port appropriateness
+        │  └─ Check credentials embedding
+        │
+        └─ IndicatorDefanger (for safe display)
+           ├─ Defang protocol (http → hxxp)
+           ├─ Defang domain separators (. → [.])
+           └─ Defang emails, IPs, etc.
+        ↓
+  TaskResult (structured assessment)
+        ├─ risk_level: SAFE|WARNING|CRITICAL
+        ├─ indicators: [URLIndicator, ...]
+        ├─ confidence: 0.0-1.0
+        ├─ recommendations: [str, ...]
+        └─ defanged_url: safe display version
+        ↓
+  Result Formatting & Display
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 2. MODULE COMPONENTS                                                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+CLASS HIERARCHY:
+
+  URLSecurityHandler (Main interface)
+    ├─ URLSecurityAnalyzer (Architectural risk assessment)
+    │  ├─ _check_encoding()      → PUNYCODE, UNICODE, PERCENT_ENCODING
+    │  ├─ _check_ip_address()    → RAW_IP, PRIVATE_IP, LOOPBACK_IP
+    │  ├─ _check_domain()        → SUSPICIOUS_DOMAIN, LONG_DOMAIN
+    │  ├─ _check_port()          → SUSPICIOUS_PORT
+    │  └─ _check_credentials()   → EMBEDDED_CREDENTIALS
+    │
+    └─ IndicatorDefanger (Safe display)
+       ├─ defang_url()      → hxxp://evil[.]com
+       ├─ defang_ip()       → 192[.]168[.]1[.]1
+       ├─ defang_domain()   → domain[.]com
+       ├─ defang_email()    → user[at]domain[.]com
+       └─ defang_string()   → Arbitrary text IoC removal
+
+DATA STRUCTURES:
+
+  RiskLevel (Enum)
+    ├─ SAFE       → Standard domain, low risk
+    ├─ WARNING    → Suspicious characteristics, manual review
+    └─ CRITICAL   → High-risk indicators
+
+  URLIndicator (Enum)
+    ├─ PUNYCODE
+    ├─ PERCENT_ENCODING
+    ├─ UNICODE_CHARS
+    ├─ RAW_IP_ADDRESS
+    ├─ PRIVATE_IP
+    ├─ LOOPBACK_IP
+    ├─ SUSPICIOUS_DOMAIN
+    ├─ SUSPICIOUS_PORT
+    ├─ EMBEDDED_CREDENTIALS
+    └─ LONG_DOMAIN
+
+  URLAssessment (Dataclass)
+    ├─ url: str
+    ├─ risk_level: RiskLevel
+    ├─ indicators: List[URLIndicator]
+    ├─ confidence: float (0.0-1.0)
+    ├─ reasoning: str
+    ├─ recommendations: List[str]
+    └─ parsed_url: ParseResult
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 3. SECURITY CHECKS (DEFENSE-IN-DEPTH)                                        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+CHECK 1: ENCODING ANALYSIS
+─────────────────────────
+Detects: IDN homograph attacks, obfuscation
+
+  Punycode (xn-- prefix)
+    Risk: CRITICAL
+    Attack: münchen.com → münchen.com (homograph)
+    Check: "xn--" detection
+    Action: Warn user to verify domain
+
+  Percent Encoding (%xx)
+    Risk: WARNING
+    Example: %68ello = "hello" (obfuscated)
+    Check: "%" in hostname
+    Action: Advise to decode and verify
+
+  Unicode Characters
+    Risk: WARNING
+    Example: münchen.example.com (non-ASCII)
+    Check: encode('ascii') failure
+    Action: Verify against expected domain
+
+
+CHECK 2: IP ADDRESS DETECTION
+──────────────────────────────
+Detects: Raw IPs instead of domains, private ranges
+
+  Raw IP Address
+    Risk: WARNING
+    Example: 192.168.1.1 instead of domain.com
+    Check: ipaddress.ip_address() success
+    Action: Verify IP is expected, not spoofed
+
+  Private IP (RFC1918)
+    Risk: CRITICAL
+    Ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    Check: ip.is_private
+    Action: Warn of private network access
+
+  Loopback Address
+    Risk: CRITICAL
+    Examples: 127.0.0.1, ::1
+    Check: ip.is_loopback
+    Action: Only valid for local testing
+
+
+CHECK 3: DOMAIN STRUCTURAL ANALYSIS
+────────────────────────────────────
+Detects: Unusual patterns, length violations
+
+  Suspicious Patterns
+    Risk: WARNING
+    Examples: numeric sequences, special chars
+    Check: regex matching
+    Action: Advise manual verification
+
+  Long Domain Name
+    Risk: WARNING
+    Limit: 63 characters (DNS label)
+    Check: len(hostname) > 63
+    Action: Verify against expected domain
+
+
+CHECK 4: PORT VERIFICATION
+──────────────────────────
+Detects: Unusual port for protocol
+
+  Suspicious Port Combinations
+    Risk: WARNING
+    Example: Port 25 (SMTP) with HTTP
+    Check: port in SUSPICIOUS_PORTS[scheme]
+    Action: Verify service on port
+
+  Invalid Port Numbers
+    Risk: CRITICAL
+    Range: 1-65535
+    Check: 0 < port < 65536
+    Action: URL is invalid
+
+
+CHECK 5: CREDENTIAL DETECTION
+─────────────────────────────
+Detects: Embedded authentication data
+
+  Embedded Credentials
+    Risk: CRITICAL
+    Example: http://admin:password@example.com
+    Check: parsed.username or parsed.password
+    Action: Never embed credentials; use headers
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 4. RISK LEVEL DETERMINATION                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+RISK CALCULATION:
+
+  CRITICAL THRESHOLD:
+    If ANY indicator in: {PRIVATE_IP, LOOPBACK_IP, EMBEDDED_CREDENTIALS, PUNYCODE}
+    Then: CRITICAL
+
+  WARNING THRESHOLD:
+    If ANY indicator exists (but not critical)
+    Then: WARNING
+
+  SAFE THRESHOLD:
+    If NO indicators detected
+    Then: SAFE
+
+
+CONFIDENCE SCORING:
+
+  0 indicators    → 1.0 confidence (100% safe)
+  1-2 indicators  → 0.9 confidence (90%)
+  3-4 indicators  → 0.85 confidence (85%)
+  5+ indicators   → 0.8 confidence (80%)
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 5. INDICATOR DEFANGING (SAFE DISPLAY)                                        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+DEFANGING RULES (For Safe Display in Logs, Markdown, Terminals):
+
+  Protocol Obfuscation:
+    http://  → hxxp://
+    https:// → hxxps://
+    ftp://   → fxxp://
+
+  Domain Separator:
+    .  → [.]     (every occurrence)
+
+  Email Delimiter:
+    @  → [at]
+
+  IPv6 Separator:
+    :: → ::[: (to break homoglyph)
+
+
+EXAMPLES:
+
+  Before: http://evil.com/malware.exe
+  After:  hxxp://evil[.]com/malware[.]exe
+
+  Before: attacker@company.com
+  After:  attacker[at]company[.]com
+
+  Before: 192.168.1.1
+  After:  192[.]168[.]1[.]1
+
+  Before: Check https://phishing.site and call admin@domain.com
+  After:  Check hxxps://phishing[.]site and call admin[at]domain[.]com
+
+
+PURPOSE:
+
+  ✓ Prevents accidental link clicks
+  ✓ Safe for terminal display
+  ✓ Markdown-compatible
+  ✓ Still human-readable
+  ✓ Print-safe for documents
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 6. HANDLER INTEGRATION WITH AGENT                                            ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+REGISTRATION PATTERN:
+
+  1. Add TaskType
+     class TaskType(Enum):
+         URL_CHECK = "url_check"
+
+  2. Add Keywords to Classifier
+     URL_KEYWORDS = {"url", "check", "safe", "phishing", ...}
+
+  3. Update Intent Classification
+     if has_url_keywords:
+         task_type = TaskType.URL_CHECK
+         primary_query = extract_url(user_input)
+
+  4. Create Handler
+     def handle_url_check(context, intent):
+         url = intent.parameters.get("url")
+         result = handler.check_url(url)
+         return TaskResult(...)
+
+  5. Register Handler
+     agent.register_handler(TaskType.URL_CHECK, handle_url_check)
+
+
+HANDLER SIGNATURE:
+
+  def handle_url_check(context: AgentContext, intent: Intent) -> TaskResult:
+      """
+      Handle URL security assessment.
+      
+      Args:
+          context: Current execution context
+          intent: Classified intent with extracted URL
+      
+      Returns:
+          TaskResult with assessment data
+      """
+
+
+RESULT STRUCTURE:
+
+  TaskResult(
+      task_type=TaskType.URL_CHECK,
+      success=True,
+      data={
+          "url": "https://example.com",
+          "defanged_url": "hxxps://example[.]com",
+          "risk_level": "safe",
+          "safe_to_visit": True,
+          "assessment": {
+              "risk_level": "safe",
+              "indicators": [],
+              "confidence": 1.0,
+              "reasoning": "...",
+              "recommendations": []
+          },
+          "entities": [...]
+      },
+      execution_time_ms=45.2
+  )
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 7. USAGE EXAMPLES                                                            ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+DIRECT USAGE:
+
+  from hermes_modules.url_security import assess_url, defang_url
+
+  # Assess URL
+  assessment = assess_url("https://suspicious.com")
+  print(assessment.risk_level)      # WARNING
+  print(assessment.indicators)      # [URLIndicator.SUSPICIOUS_DOMAIN]
+
+  # Defang for logs
+  safe_url = defang_url("http://evil.com")
+  logger.info(f"Check: {safe_url}")  # "hxxp://evil[.]com"
+
+
+INTEGRATED WITH AGENT:
+
+  from hermes_modules.agent_core_v2 import create_hermes_agent_with_modules
+
+  agent, _ = create_hermes_agent_with_modules()
+  context = agent.process_input("Is this URL safe: http://phishing.com?")
+
+  # Access results
+  for result in context.results:
+      if result.task_type.value == "url_check":
+          print(f"Risk: {result.data['risk_level']}")
+          print(f"Recommendations: {result.data['recommendations']}")
+
+
+BATCH PROCESSING:
+
+  from hermes_modules.url_security import URLSecurityHandler
+
+  handler = URLSecurityHandler()
+  urls = ["http://github.com", "http://192.168.1.1", "http://xn--evil.com"]
+
+  for url in urls:
+      assessment = handler.check_url(url)
+      if assessment["risk_level"] == "critical":
+          print(f"ALERT: {assessment['defanged_url']}")
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 8. DESIGN PRINCIPLES                                                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+✓ FAIL-SAFE DEFAULTS
+  - Assume suspicious until proven safe
+  - Preference for WARNING/CRITICAL over missing threats
+  - Conservative confidence scoring
+
+✓ DEFENSE-IN-DEPTH
+  - Multiple overlapping checks
+  - No single check is sufficient
+  - Different indicators catch different attacks
+
+✓ ARCHITECTURAL SOUNDNESS
+  - Layer 1 module (no dependencies on higher layers)
+  - Clean handler registration pattern
+  - Backward compatible (new TaskType)
+
+✓ LOGGING & OBSERVABILITY
+  - Comprehensive security logging
+  - Configurable verbosity
+  - Detailed reasoning in assessment
+
+✓ STANDARD LIBRARY ONLY
+  - urllib.parse (standard)
+  - ipaddress (standard)
+  - re (standard)
+  - No external security dependencies needed
+
+✓ NON-BLOCKING
+  - Assessment doesn't crash agent
+  - Errors handled gracefully
+  - Fallback to WARNING level on error
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 9. BACKWARD COMPATIBILITY                                                    ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+✓ Zero breaking changes:
+  - New TaskType (URL_CHECK) is additive
+  - Existing agents work without URL handler
+  - Handler registration is optional
+  - All other layers unchanged
+
+✓ Graceful degradation:
+  - Agent works fine without URL handler
+  - Can be disabled at runtime
+  - No required dependencies
+
+✓ Compatible with:
+  - agent_core_v2.py (enhanced agent)
+  - intent_classifiers.py (two-tier classification)
+  - existing TaskTypes (WEB_SEARCH, SYSTEM_MONITOR, etc.)
+  - 5-layer architecture
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ CONCLUSION                                                                   ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+The URLSecurityHandler adds a critical defensive security layer to Hermes:
+
+✓ Architectural Risk Assessment     → Detects suspicious URL structures
+✓ Indicator Defanging               → Safe display of IoCs
+✓ TaskType Integration              → Seamless agent integration
+✓ Defense-in-Depth                  → Multiple overlapping checks
+✓ Production-Ready                  → Logging, error handling, fail-safe
+✓ Zero Breaking Changes             → Fully backward compatible
+✓ Standard Libraries Only           → No external dependencies
+
+Your Hermes agent now includes DEFENSIVE SECURITY! 🛡️
+

@@ -1,0 +1,13 @@
+# Hermes Agent Modules Requirements
+
+# Core dependencies
+requests>=2.31.0          # HTTP client for API requests
+psutil>=5.9.0             # System and process utilities
+
+# Optional: for environment variable management
+python-dotenv>=1.0.0      # Load environment variables from .env file
+
+# Development dependencies (optional)
+pytest>=7.0.0             # Testing framework
+black>=23.0.0             # Code formatter
+flake8>=6.0.0             # Linter
