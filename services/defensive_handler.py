@@ -130,6 +130,7 @@ class DefensiveRouter:
     def __init__(self):
         """Initialize router with handler mappings."""
         self.sanitizer = InputSanitizer()
+        self.web_search_client = None  # Lazy-loaded
         self._setup_route_keywords()
 
     def _setup_route_keywords(self):
@@ -149,6 +150,11 @@ class DefensiveRouter:
                 "keywords": {"port", "listening", "connection", "network", "পোর্ট", "সংযোগ"},
                 "handler": "port_check",
                 "bengali_keywords": {"পোর্ট", "সংযোগ", "নেটওয়ার্ক", "শোনা", "চলছে"}
+            },
+            "web_search": {
+                "keywords": {"search", "find", "look", "research", "information", "খোঁজ", "তথ্য", "গবেষণা"},
+                "handler": "web_search",
+                "bengali_keywords": {"খোঁজ", "খোঁজো", "খুঁজ", "খুঁজো", "তথ্য", "গবেষণা", "অনুসন্ধান"}
             }
         }
 
@@ -183,22 +189,34 @@ class DefensiveRouter:
         This is called when input is routed to a local handler instead of LLM.
         """
         response_text = ""
+        execution_error = None
 
-        if handler_type == "url_security":
-            response_text = self._handle_url_check(query, is_bengali)
-        elif handler_type == "system_monitor":
-            response_text = self._handle_system_monitor(query, is_bengali)
-        elif handler_type == "port_check":
-            response_text = self._handle_port_check(query, is_bengali)
-        else:
-            response_text = self._handle_fallback(is_bengali)
+        try:
+            if handler_type == "url_security":
+                response_text = self._handle_url_check(query, is_bengali)
+            elif handler_type == "system_monitor":
+                response_text = self._handle_system_monitor(query, is_bengali)
+            elif handler_type == "port_check":
+                response_text = self._handle_port_check(query, is_bengali)
+            elif handler_type == "web_search":
+                response_text = self._handle_web_search(query, is_bengali)
+            else:
+                response_text = self._handle_fallback(is_bengali)
+        except Exception as e:
+            # Log error but provide graceful fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Handler {handler_type} error: {e}", exc_info=True)
+            execution_error = str(e)
+            response_text = self._handle_handler_error(handler_type, is_bengali, str(e))
 
         return {
             "ok": True,
             "response": response_text,
             "handler": handler_type,
             "is_local": True,
-            "is_bengali": is_bengali
+            "is_bengali": is_bengali,
+            "error": execution_error
         }
 
     @staticmethod
@@ -277,6 +295,81 @@ class DefensiveRouter:
                 "✅ Service status checks"
             )
 
+    def _handle_web_search(self, query: str, is_bengali: bool) -> str:
+        """Handle web search request via SerpApi or Tavily."""
+        try:
+            # Lazy-load WebSearchClient
+            if self.web_search_client is None:
+                from hermes_modules.web_search import WebSearchClient
+                self.web_search_client = WebSearchClient(timeout=15)
+
+            # Extract search query
+            search_query = query.replace("search", "").replace("find", "").replace("খোঁজ", "").strip()
+            if not search_query:
+                search_query = query
+
+            # Perform search with timeout protection
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Web search initiated for: {search_query}")
+
+            results = self.web_search_client.search(
+                query=search_query,
+                max_results=5,
+                language="bn" if is_bengali else "en",
+                safe_mode=True
+            )
+
+            # Format results as Bengali markdown
+            return self._format_search_results(results, is_bengali)
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Web search error: {e}", exc_info=True)
+            raise
+
+    @staticmethod
+    def _format_search_results(results, is_bengali: bool) -> str:
+        """Format search results as markdown in Bengali or English."""
+        if not results:
+            return "🔍 কোনো ফলাফল পাওয়া যায়নি" if is_bengali else "🔍 No results found"
+
+        if is_bengali:
+            markdown = "🔍 **অনুসন্ধান ফলাফল**\n\n"
+            for idx, result in enumerate(results, 1):
+                markdown += f"### {idx}. {result.title}\n"
+                markdown += f"{result.snippet}\n\n"
+                markdown += f"**লিঙ্ক:** {result.url}\n\n"
+            markdown += "_এই ফলাফলগুলি নিরাপদ স্থানীয় অনুসন্ধান থেকে আসা হয়েছে।_"
+        else:
+            markdown = "🔍 **Search Results**\n\n"
+            for idx, result in enumerate(results, 1):
+                markdown += f"### {idx}. {result.title}\n"
+                markdown += f"{result.snippet}\n\n"
+                markdown += f"**Link:** {result.url}\n\n"
+            markdown += "_These results come from safe local search._"
+
+        return markdown
+
+    @staticmethod
+    def _handle_handler_error(handler_type: str, is_bengali: bool, error: str) -> str:
+        """Handle errors from local handlers gracefully."""
+        if is_bengali:
+            return (
+                f"⚠️ {handler_type} হ্যান্ডলার ত্রুটি\n\n"
+                f"আপনার অনুরোধ প্রক্রিয়া করতে সমস্যা হয়েছে:\n"
+                f"__{error}__\n\n"
+                "দয়া করে আবার চেষ্টা করুন বা আরও তথ্য প্রদান করুন।"
+            )
+        else:
+            return (
+                f"⚠️ {handler_type} Handler Error\n\n"
+                f"There was an issue processing your request:\n"
+                f"__{error}__\n\n"
+                "Please try again or provide more information."
+            )
+
     @staticmethod
     def _handle_fallback(is_bengali: bool) -> str:
         """Fallback response when no specific handler matched."""
@@ -288,7 +381,8 @@ class DefensiveRouter:
                 "আরও নির্দিষ্ট অনুরোধ করুন:\n"
                 "• 'সিস্টেমের অবস্থা দেখাও' (সিস্টেম পর্যবেক্ষণের জন্য)\n"
                 "• 'এই লিঙ্কটি পরীক্ষা করো' (ইউআরএল চেকের জন্য)\n"
-                "• 'পোর্ট 8080 শুনছে কিনা জানুন' (পোর্ট চেকের জন্য)"
+                "• 'পোর্ট 8080 শুনছে কিনা জানুন' (পোর্ট চেকের জন্য)\n"
+                "• 'Python সম্পর্কে খোঁজ করো' (ওয়েব অনুসন্ধানের জন্য)"
             )
         else:
             return (
@@ -298,7 +392,8 @@ class DefensiveRouter:
                 "Please try a more specific request:\n"
                 "• \"Check system status\" (for system monitoring)\n"
                 "• \"Check this link\" (for URL security)\n"
-                "• \"Is port 8080 listening?\" (for port checking)"
+                "• \"Is port 8080 listening?\" (for port checking)\n"
+                "• \"Search for Python tutorials\" (for web search)"
             )
 
     def generate_rejection_response(self, sensitivity: SensitivityLevel,
