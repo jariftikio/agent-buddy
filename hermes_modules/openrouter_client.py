@@ -207,6 +207,45 @@ JSON ফর্ম্যাটে উত্তর দিন:
             logger.error(f"Translation error: {e}")
             return bengali_text  # Return original on error
 
+    def generate_response(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> Dict[str, Any]:
+        """
+        Generate a response from user prompt.
+
+        Args:
+            prompt: User's text prompt
+            system_prompt: Optional system prompt
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+
+        Returns:
+            Response dict with 'ok' and 'response' keys
+        """
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            response_text = self.complete(
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return {
+                "ok": True,
+                "response": response_text,
+            }
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            return {
+                "ok": False,
+                "error": str(e),
+                "response": "",
+            }
+
     @staticmethod
     def list_available_models() -> List[str]:
         """
