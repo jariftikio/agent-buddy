@@ -21,5 +21,8 @@ beautifulsoup4>=4.12.0
 # Postgres, imported lazily and only when DATABASE_URL is set; SQLite is stdlib.
 psycopg[binary]==3.2.13
 
+# Asynchronous SQLite driver for telemetry persistence
+aiosqlite==0.22.1
+
 # Required by beautifulsoup4 and psycopg on Python < 3.13, so it is pinned, not implied.
 typing_extensions==4.15.0
