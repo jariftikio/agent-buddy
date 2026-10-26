@@ -30,6 +30,12 @@ from hermes_modules.agent_core_v2 import (
     create_hermes_agent_with_modules,
     TaskType,
 )
+from hermes_modules.language_config import (
+    Language,
+    LanguageDetector,
+    SystemPromptManager,
+    BengaliKeywordNormalizer,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -57,35 +63,41 @@ class HermesUI:
     HELP_TEXT = """
     ┌─ USAGE ─────────────────────────────────────────────────────┐
     │                                                              │
-    │  Natural Language Examples:                                 │
+    │  ENGLISH Examples:                                           │
     │                                                              │
     │  Web Search:                                               │
     │    • "Search for Python best practices"                    │
     │    • "Find information about machine learning"             │
-    │    • "What is Docker?"                                     │
     │                                                              │
     │  System Monitoring:                                        │
     │    • "Check CPU and memory usage"                          │
-    │    • "What is the system status?"                          │
     │    • "Monitor my system health"                            │
-    │                                                              │
-    │  Port Checking:                                            │
-    │    • "Is port 8080 listening?"                             │
-    │    • "Check port 3000"                                     │
     │                                                              │
     │  URL Security:                                             │
     │    • "Is https://example.com safe?"                        │
-    │    • "Check if this URL is malicious: https://site.com"    │
-    │    • "Verify domain https://phishing-attempt.com"          │
+    │    • "Check if this URL is malicious"                      │
     │                                                              │
-    │  Combined:                                                  │
-    │    • "Check system and search for optimization tips"       │
-    │    • "Monitor CPU and find cooling solutions"              │
+    │  ─────────────────────────────────────────────────────────│
+    │                                                              │
+    │  বাংলা (BENGALI) Examples:                                  │
+    │                                                              │
+    │  Web Search:                                               │
+    │    • "Python সম্পর্কে খোঁজ করো"                            │
+    │    • "মেশিন লার্নিং সম্পর্কে তথ্য খুঁজ"                    │
+    │                                                              │
+    │  System Status:                                            │
+    │    • "সিস্টেমের অবস্থা দেখাও"                              │
+    │    • "সিপিইউ এবং মেমরি চেক করো"                           │
+    │    • "সিস্টেম স্বাস্থ্য রিপোর্ট দেখাও"                     │
+    │                                                              │
+    │  URL Security:                                             │
+    │    • "এই লিংকটি নিরাপদ কিনা দেখাও"                       │
+    │    • "ইউআরএল চেক করো: https://example.com"               │
     │                                                              │
     │  Commands:                                                  │
-    │    • help   - Show this help text                          │
-    │    • exit   - Exit the agent                               │
-    │    • clear  - Clear screen                                 │
+    │    • help   - এই সাহায্য বার্তা দেখাও                      │
+    │    • exit   - বেরিয়ে যান                                   │
+    │    • clear  - স্ক্রিন পরিষ্কার করুন                        │
     │                                                              │
     └──────────────────────────────────────────────────────────────┘
     """
@@ -133,13 +145,15 @@ class HermesExecutor:
         """Initialize executor with configured agent."""
         self.agent, _ = create_hermes_agent_with_modules(enable_logging=False)
         self.ui = HermesUI()
+        self.current_language = Language.ENGLISH
 
-    def process_user_input(self, user_input: str) -> dict:
+    def process_user_input(self, user_input: str, language: Language = Language.ENGLISH) -> dict:
         """
         Process user input through the agent.
 
         Args:
-            user_input: User's natural language input.
+            user_input: User's natural language input (English or Bengali).
+            language: Detected language (ENGLISH or BENGALI).
 
         Returns:
             Dictionary with execution results and metadata.
@@ -147,6 +161,9 @@ class HermesExecutor:
         # Skip empty input
         if not user_input.strip():
             return None
+
+        # Store language for response formatting
+        self.current_language = language
 
         # Handle commands
         if user_input.lower() == "help":
@@ -314,9 +331,8 @@ def main():
     executor.ui.print_banner()
 
     print("  Type 'help' for usage information, or start querying:")
-    print("  • 'Search for Python tutorials'")
-    print("  • 'Check system health'")
-    print("  • 'Is port 8080 listening?'\n")
+    print("  • English: 'Search for Python tutorials'")
+    print("  • বাংলা: 'সিস্টেমের অবস্থা দেখাও'\n")
 
     try:
         while True:
@@ -324,8 +340,15 @@ def main():
                 # Get user input
                 user_input = input("  🔮 Hermes > ").strip()
 
+                if not user_input:
+                    continue
+
+                # Detect language
+                detected_language = LanguageDetector.detect_language(user_input)
+                logger.debug(f"Detected language: {detected_language.value}")
+
                 # Process input
-                response = executor.process_user_input(user_input)
+                response = executor.process_user_input(user_input, detected_language)
 
                 # Check for exit command
                 if response and response.get("command") == "exit":

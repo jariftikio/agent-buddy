@@ -18,6 +18,9 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Bengali Unicode detection
+BENGALI_UNICODE_RANGE = (0x0980, 0x09FF)
+
 
 class TaskType(Enum):
     """Types of tasks the agent can handle."""
@@ -147,16 +150,61 @@ class KeywordBasedIntentClassifier(IntentClassifierBase):
         "suspicious",
     }
 
+    # Bengali Keywords
+    BENGALI_SEARCH_KEYWORDS = {
+        "অনুসন্ধান", "খোঁজ", "খোঁজো", "খুঁজ", "গবেষণা",
+        "জানুন", "শিখুন", "সার্চ"
+    }
+
+    BENGALI_MONITOR_KEYWORDS = {
+        "সিস্টেম", "অবস্থা", "দেখাও", "চেক", "পরীক্ষা", "স্বাস্থ্য",
+        "সিপিইউ", "মেমরি", "র্যাম", "ব্যবহার", "পারফরম্যান্স"
+    }
+
+    BENGALI_PORT_KEYWORDS = {
+        "পোর্ট", "সংযোগ", "নেটওয়ার্ক", "প্রক্রিয়া", "শোনা", "চলছে"
+    }
+
+    BENGALI_URL_KEYWORDS = {
+        "লিঙ্ক", "লিংক", "ইউআরএল", "ডোমেইন", "নিরাপদ", "নিরাপত্তা",
+        "ফিশিং", "ক্ষতিকারক"
+    }
+
+    BENGALI_HEALTH_KEYWORDS = {
+        "স্বাস্থ্য", "রিপোর্ট", "সম্পূর্ণ"
+    }
+
+    def _is_bengali(self, text: str) -> bool:
+        """Check if text contains significant Bengali content."""
+        bengali_count = sum(
+            1 for char in text
+            if BENGALI_UNICODE_RANGE[0] <= ord(char) <= BENGALI_UNICODE_RANGE[1]
+        )
+        return bengali_count > len(text) * 0.2
+
     def classify(self, user_input: str) -> Intent:
-        """Classify using keyword matching."""
+        """Classify using keyword matching (supports English and Bengali)."""
         lower_input = user_input.lower()
         logger.debug(f"Keyword classifier analyzing: '{user_input}'")
 
-        # Check for combined requests
-        has_search = any(kw in lower_input for kw in self.SEARCH_KEYWORDS)
-        has_monitor = any(kw in lower_input for kw in self.MONITOR_KEYWORDS)
-        has_port = any(kw in lower_input for kw in self.PORT_KEYWORDS)
-        has_url = any(kw in lower_input for kw in self.URL_KEYWORDS)
+        # Detect Bengali input
+        is_bengali = self._is_bengali(user_input)
+
+        if is_bengali:
+            # Use Bengali keyword sets
+            has_search = any(kw in user_input for kw in self.BENGALI_SEARCH_KEYWORDS)
+            has_monitor = any(kw in user_input for kw in self.BENGALI_MONITOR_KEYWORDS)
+            has_port = any(kw in user_input for kw in self.BENGALI_PORT_KEYWORDS)
+            has_url = any(kw in user_input for kw in self.BENGALI_URL_KEYWORDS)
+            has_health = any(kw in user_input for kw in self.BENGALI_HEALTH_KEYWORDS)
+            logger.debug("Detected Bengali input")
+        else:
+            # Use English keyword sets
+            has_search = any(kw in lower_input for kw in self.SEARCH_KEYWORDS)
+            has_monitor = any(kw in lower_input for kw in self.MONITOR_KEYWORDS)
+            has_port = any(kw in lower_input for kw in self.PORT_KEYWORDS)
+            has_url = any(kw in lower_input for kw in self.URL_KEYWORDS)
+            has_health = "health" in lower_input or "report" in lower_input
 
         # Determine task type
         if has_search and has_monitor:
@@ -179,9 +227,9 @@ class KeywordBasedIntentClassifier(IntentClassifierBase):
                 if port_num
                 else []
             )
-        elif "health" in lower_input or "report" in lower_input:
+        elif has_health:
             task_type = TaskType.HEALTH_REPORT
-            primary_query = "Generate system health report"
+            primary_query = "Generate system health report" if not is_bengali else "সিস্টেম স্বাস্থ্য রিপোর্ট তৈরি করুন"
             entities = []
         elif has_monitor:
             task_type = TaskType.SYSTEM_MONITOR
